@@ -14,7 +14,7 @@ Raise both `versionCode` and the three-part `versionName` in `app/build.gradle`.
 
 The current personal app is debug-signed. **Every update must reuse the same original debug keystore**. A fresh machine or CI runner normally generates another key, which cannot update your existing app. Keep a private backup of the current `%USERPROFILE%\.android\debug.keystore`. Never add that file or its base64 form to this public repository.
 
-The release workflow restores that original key from the GitHub Actions secret **ANDROID_DEBUG_KEYSTORE_BASE64**. It intentionally fails if the secret is missing. Configure it once using GitHub CLI, sending the key directly through standard input:
+The release workflow restores that original key from the GitHub Actions secret **ANDROID_DEBUG_KEYSTORE_BASE64** to a private temporary file and selects it explicitly through `SCOUT_SIGNING_KEYSTORE`. It fails if the secret is missing or the built APK's certificate differs from the original. Configure it once using GitHub CLI, sending the key directly through standard input:
 
 ```powershell
 $signingBytes = [System.IO.File]::ReadAllBytes((Join-Path $env:USERPROFILE '.android\debug.keystore'))

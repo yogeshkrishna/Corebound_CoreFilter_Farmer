@@ -53,7 +53,7 @@ The updated overlay appearance on the iQOO display, clean-window/hidden-bar scre
 ## Local APK
 
 - File: `dist/Ceiling-Scout.apk`
-- Size: 5,21,13,244 bytes
+- Size: 52,113,244 bytes
 - SHA-256: `d3a11b2fb82fe50d128c06882900f355f5163d3ae9318cfc3dc238addafd96ed`
 - Signing certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
 

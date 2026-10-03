@@ -42,9 +42,9 @@ jobs:
           ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
         run: |
           test -n "$ANDROID_DEBUG_KEYSTORE_BASE64" || { echo 'Add ANDROID_DEBUG_KEYSTORE_BASE64 before publishing. A new key cannot update existing phones.'; exit 1; }
-          mkdir -p "$HOME/.android"
-          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
-          chmod 600 "$HOME/.android/debug.keystore"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/ceiling-scout-debug.keystore"
+          chmod 600 "$RUNNER_TEMP/ceiling-scout-debug.keystore"
+          printf 'SCOUT_SIGNING_KEYSTORE=%s\n' "$RUNNER_TEMP/ceiling-scout-debug.keystore" >> "$GITHUB_ENV"
       - name: Install pinned Android SDK components
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
@@ -57,6 +57,8 @@ jobs:
           java -cp analysis/test-classes PixelVisionTest .
           mkdir -p release
           cp app/build/outputs/apk/debug/app-debug.apk release/Ceiling-Scout.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/Ceiling-Scout.apk | tee release/signature.txt
+          grep -F 'Signer #1 certificate SHA-256 digest: 65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097' release/signature.txt
           cd release
           sha256sum Ceiling-Scout.apk > Ceiling-Scout.apk.sha256
       - name: Publish the app and checksum
@@ -64,7 +66,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 --title "Ceiling Scout $RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
+          notes_file="docs/release-${RELEASE_TAG#v}.md"
+          if test -f "$notes_file"; then
+            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 --title "Ceiling Scout $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
+          else
+            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 --title "Ceiling Scout $RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
+          fi
       - name: Remove signing key from the runner
         if: always()
-        run: rm -f "$HOME/.android/debug.keystore"
+        run: rm -f "$RUNNER_TEMP/ceiling-scout-debug.keystore"
