@@ -31,6 +31,8 @@ This runs APK assembly, JUnit/Robolectric, Android lint, and the recorded-frame 
 | Minimum/target Android API | 30 / 35 |
 | Network/install permissions | INTERNET and REQUEST_INSTALL_PACKAGES; no ACCESS_NETWORK_STATE |
 | CPU architectures | arm64-v8a, armeabi-v7a, x86, x86_64 |
+| Fresh GitHub build, tests, fixture checks and release publication | [Passed](https://github.com/yogeshkrishna/ceiling-scout/actions/runs/37136608628) |
+| Downloaded public APK | SHA-256 and checksum attachment matched; original certificate, package/version and alignment verified |
 
 The farming regressions cover all seven jumps across an ascent, confirmed ground recharge, ceiling sweep, targets behind/above the player, contact-and-burn traversal, gate backtracking, tier arrows attached to OCR digits, and results/crate/Play over 105 repeat cycles beyond the old run/session caps.
 
@@ -53,10 +55,19 @@ The updated overlay appearance on the iQOO display, clean-window/hidden-bar scre
 ## Local APK
 
 - File: `dist/Ceiling-Scout.apk`
-- Size: 52,113,244 bytes
-- SHA-256: `d3a11b2fb82fe50d128c06882900f355f5163d3ae9318cfc3dc238addafd96ed`
+- Size: 52,008,383 bytes
+- SHA-256: `8e6442f0df73f41f33323715f7af4e69a2248c20ddad08994ba9f2b0e557f687`
 - Signing certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
 
 GitHub publishes its own asset checksum alongside the APK. A CI rebuild may have a different file hash while retaining the same package, version and signing certificate.
+
+## Published APK
+
+- [Ceiling Scout 0.2.0](https://github.com/yogeshkrishna/ceiling-scout/releases/tag/v0.2.0)
+- Size: 52,008,383 bytes
+- SHA-256: `8c8bc0d5fed80b48ab805151fe0ebe6fa9f34f04741b8faf9b37d7809a567c75`
+- Signing certificate: the same original `65aa3b42...37f5097` certificate shown above
+
+The first hosted build used another debug certificate despite a restored key. That release was withdrawn and removed. The corrected workflow selects the private original key explicitly and checks its complete certificate fingerprint before publication. The final public artifact was downloaded without account credentials using the updater's request headers and checked independently.
 
 Toolchain: Eclipse Temurin JDK 17.0.20.1, Gradle 8.9, AGP 8.7.3, Android compile SDK/build-tools 35/35.0.0, bundled ML Kit Latin text recognition 16.0.1, Robolectric 4.14.1.

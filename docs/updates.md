@@ -25,7 +25,7 @@ Remove-Variable signingBytes, signingBase64
 
 Do this only with the original key that signed the installed APK. The secret is not printed by this command. The workflow uses the standard debug alias and password, so a custom release key requires an explicit signing configuration and a planned migration.
 
-Commit and push the reviewed source, then either push a matching version tag or run **Actions → Publish Android update → Run workflow**. The workflow builds, runs unit tests and lint, creates the checksum, and publishes a release. An already published tag is not overwritten. This workflow has not been proven on GitHub until its first successful run; the locally published release can be used meanwhile.
+Commit and push the reviewed source, then either push a matching version tag or run **Actions → Publish Android update → Run workflow**. The workflow builds, runs unit tests, recorded-frame checks and lint, verifies the original signing certificate, creates the checksum, and publishes a release. An already published tag is not overwritten. The corrected workflow passed its [first verified release run](https://github.com/yogeshkrishna/ceiling-scout/actions/runs/37136608628) on 3 October 2026; its downloaded APK matched the checksum and the original certificate.
 
 For a local build and publication from the same machine/signing key:
 
