@@ -1,0 +1,26 @@
+CEILING SCOUT 0.2.0 — PHONE UPDATE
+
+1. Open https://github.com/yogeshkrishna/ceiling-scout/releases/latest on your phone.
+2. Download Ceiling-Scout.apk. Open it with Package Installer, then tap Install.
+   Install over the old app. Do NOT uninstall: your build and calibration stay saved.
+3. Open Ceiling Scout > Show floating bar > Open Corebound.
+4. Select Lost Scrapyard boosted to Frozen five stars and press Run on the bar.
+   Default: three Hookshots / seven jumps. Change equipment through Edit build & farming settings.
+5. More controls are under the bar's ••• menu. Calibrate once if needed.
+   Preview captured game lets you check that the bar is absent from the input image.
+
+FUTURE UPDATES
+Ceiling Scout > Check for updates > Download & install.
+Allow installs from Ceiling Scout once if Android asks, then confirm Install.
+No more emailing yourself APKs. An update must first be published to GitHub Releases.
+
+IF CONTROLS ARE DISCONNECTED
+Enable Ceiling Scout controls in Android Accessibility. Android may first require
+App info > menu > Allow restricted settings for a sideloaded app.
+
+Pause prevents new touches; an already issued batch releases within 700 ms.
+Stop & hide ends the session. Reopen the bar from the app.
+Supervise the first updated runs. The changes pass recorded-frame and logic checks;
+they still need a phone trial. Unknown ads or ambiguous filter offers may pause.
+
+See README.md and docs/verification.md for details.

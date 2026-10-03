@@ -1,0 +1,61 @@
+# Ceiling Scout
+
+A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, using the supplied Gilded Ember build. It reads the game on your phone, sends movement and jump taps, checks ceilings, pursues visible missed enemies, and repeats runs. It watches a reward ad when the displayed offer contains a recognized core filter.
+
+**[Download the latest APK](https://github.com/yogeshkrishna/ceiling-scout/releases/latest)** · Android 11 or later
+
+Version 0.2.0 addresses feedback from the first phone trial. The updated APK has build, recorded-frame and simulated Android checks. Its new navigation and installer still need verification on the actual phone; full ceiling coverage and a maximum filters-per-hour rate are not established.
+
+## Install this update
+
+1. Download **Ceiling-Scout.apk** from the latest release on your phone and open it with Android's Package Installer. Install it over the existing app. **Do not uninstall first:** your build and calibration will stay saved.
+2. Open Ceiling Scout. If controls are disconnected, use **Enable controls** and enable **Ceiling Scout controls** in Accessibility settings. For a sideloaded app Android may first require **App info → menu → Allow restricted settings**; wording varies by phone.
+3. Tap **Show floating bar**, then **Open Corebound**. Select Lost Scrapyard with Frozen ★5. Starting inside gameplay assumes you selected that level yourself.
+4. The small bar has **Run/Pause** and **•••**. The menu contains Build, Observe, Calibrate, captured-game preview, capture mode, and Stop & hide.
+5. If needed, enter gameplay and choose **••• → Calibrate controls**. Tap the left button, right button, then jump area on the frozen image. These taps do not touch the game. Saved calibration turns off automatic movement-button location.
+6. Press **Run** and supervise the first runs. Use **Edit build & farming settings** when your equipment changes.
+
+The default is **three Magmatic ★7+ Hookshots: one base jump plus six extra jumps**. Hookshot count and any other extra jumps are editable. The app issues separate press/release taps in short batches, tracks the ascent budget, and refills it after visible airtime followed by confirmed ground contact.
+
+## Updates from the phone
+
+In Ceiling Scout use **Check for updates → Download & install**. On the first update, Android may ask you to allow installation from Ceiling Scout. Then confirm **Install** in Android's installer. You do not need to email each new APK to yourself.
+
+Checks are manual. New builds must be published to GitHub Releases before the button can find them. Only a newer stable release is offered. The app checks its download hash, app identity, version code, and original signing certificate before installation. The configured public repository is editable. See [update and release instructions](docs/updates.md).
+
+## Farming and floating controls
+
+- **Run/Pause:** farming continues until stopped by default. Pause prevents new touches; an already issued batch releases within 700 ms.
+- **••• → Build & Hookshots:** pauses farming and opens equipment notes, jump count, tap spacing, movement duration, contact time, run watchdog, and ad preference.
+- **Observe:** shows the immediate decision without sending touches.
+- **Preview captured game:** freezes the input image so you can verify that the bar is absent. Tap or press Back to close.
+- **Capture mode:** Android 14+ normally captures the game window without the bar. Older Android versions, or compatibility mode, briefly hide the bar before display capture. Detected overlay contamination switches to compatibility capture.
+- **Stop & hide:** stops farming and removes the bar. Reopen it from the home screen. Drag its status text to move it.
+
+The navigator uses repeated Hookshot jumps and ceiling sweeps, checks visible enemy candidates above and behind the crawler, passes through Ember targets, and keeps moving while they burn. Closed gates trigger backtracking to look for missed enemies. It does not sit still waiting for each burn animation to finish.
+
+Results are recognized before animation-speed taps. Continue and crate Close are followed by another verified Play on the selected target. A bare Play button cannot authorize a different level. Session/run-count caps are optional; per-run, capture, unknown-screen and stuck-recovery watchdogs remain active.
+
+The reward strip, rather than a presumed Spectrum kill or main loot, determines whether to watch the optional ad. Recognized ad countdowns are allowed to finish before Close/Skip/X; each following end card is checked again. If an observed ad opens Google Play, the app returns with bounded Back attempts. Unrecognized ad stages or ambiguous rare-filter offers can require manual handling.
+
+## Limits
+
+This is a screen-driven navigation heuristic for the shown crawler, not a map solver or a validated Spectrum classifier. It cannot guarantee every randomized high corner or enemy is reached. Enemy appearance does not reliably establish a Dreadnought identity or a completed burn. Different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing.
+
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [video findings](docs/video-analysis.md), [research](docs/research.md), and [verification](docs/verification.md).
+
+## Privacy
+
+OCR is bundled and runs on the phone. Game screenshots are processed in memory and are not uploaded or saved by the app. Build settings and a bounded decision log stay in app-private storage. Update requests and APK downloads use GitHub. Google's OCR SDK can also collect diagnostic device, app and performance metrics, as described in its [ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure). Installation uses Android's installer and its confirmation screen. No account login or token is stored in the Android app.
+
+## Build and publish
+
+JDK 17, Android SDK/build-tools 35, AGP 8.7.3 and Gradle 8.9 are pinned. On Windows, provision them with `tools/setup-toolchain.ps1` or use an existing installation, then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+```
+
+This assembles the debug APK, runs JUnit/Robolectric and Android lint, and checks the small recorded-frame corpus. The Gradle wrapper downloads the pinned distribution. GitHub Actions has a release workflow; [docs/updates.md](docs/updates.md) describes publishing and preserving the existing signing key.
+
+This is a debug-signed personal build. Keep the original key for all updates; a new certificate cannot update an existing installation. Private signing material and original videos are excluded from the repository. No Play Store publication is included.

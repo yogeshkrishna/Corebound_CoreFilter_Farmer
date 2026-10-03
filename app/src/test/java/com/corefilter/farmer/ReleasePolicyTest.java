@@ -1,0 +1,27 @@
+package com.corefilter.farmer;
+
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
+import java.net.URI;
+import java.util.*;
+import static org.junit.Assert.*;
+
+@RunWith(RobolectricTestRunner.class) @Config(sdk=35)
+public class ReleasePolicyTest {
+    private static final String HASH="a".repeat(64),REPO="yogeshkrishna/ceiling-scout";
+    private String asset(String digest){return "{\"name\":\"Ceiling-Scout.apk\",\"size\":52000000,\"digest\":\""+digest+"\",\"browser_download_url\":\"https://github.com/"+REPO+"/releases/download/v0.3.0/Ceiling-Scout.apk\"}";}
+    private String release(String asset){return "{\"tag_name\":\"v0.3.0\",\"draft\":false,\"prerelease\":false,\"body\":\"Faster ceiling scans\",\"assets\":["+asset+"]}";}
+    @Test public void acceptsRepoSlugAndGithubUrl(){assertEquals(REPO,ReleasePolicy.repository(REPO));assertEquals(REPO,ReleasePolicy.repository("https://github.com/"+REPO+".git/"));}
+    @Test public void rejectsCredentialUrlsPathsAndWrongHosts(){for(String value:List.of("https://evil.example/"+REPO,"owner/repo/extra","../repo","user/repo?token=secret","https://github.com/a/b/issues","owner/.."))assertThrows(IllegalArgumentException.class,()->ReleasePolicy.repository(value));}
+    @Test public void semanticVersionOrderIsNumeric(){assertTrue(ReleasePolicy.newer("v0.10.0","0.2.0"));assertTrue(ReleasePolicy.newer("v1.0.0","0.20.9"));assertFalse(ReleasePolicy.newer("v0.2.0","0.2.0"));assertFalse(ReleasePolicy.newer("v0.1.9","0.2.0"));assertFalse(ReleasePolicy.newer("v0.3.0-beta","0.2.0"));}
+    @Test public void parsesUploadedApkAndHash()throws Exception{ReleasePolicy.Release found=ReleasePolicy.parse(release(asset("sha256:"+HASH)),REPO,"0.2.0");assertNotNull(found);assertEquals(HASH,found.hash);assertEquals(52000000,found.bytes);assertEquals("v0.3.0",found.tag);}
+    @Test public void ignoresOldDraftAndPrerelease()throws Exception{String json=release(asset("sha256:"+HASH));assertNull(ReleasePolicy.parse(json,REPO,"0.3.0"));assertNull(ReleasePolicy.parse(json.replace("\"draft\":false","\"draft\":true"),REPO,"0.2.0"));assertNull(ReleasePolicy.parse(json.replace("\"prerelease\":false","\"prerelease\":true"),REPO,"0.2.0"));}
+    @Test public void requiresOneKnownApkAndSupportedSize(){assertThrows(IllegalArgumentException.class,()->ReleasePolicy.parse(release(asset("sha256:"+HASH)+","+asset("sha256:"+HASH)),REPO,"0.2.0"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.parse(release(asset("sha256:"+HASH).replace("52000000","0")),REPO,"0.2.0"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.parse(release(asset("sha256:"+HASH).replace("52000000","900000000")),REPO,"0.2.0"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.parse(release(asset("sha256:"+HASH).replace("Ceiling-Scout.apk","Other.apk")),REPO,"0.2.0"));}
+    @Test public void allowsChecksumAttachmentFallback()throws Exception{String checksum="{\"name\":\"Ceiling-Scout.apk.sha256\",\"browser_download_url\":\"https://github.com/"+REPO+"/releases/download/v0.3.0/Ceiling-Scout.apk.sha256\"}";ReleasePolicy.Release found=ReleasePolicy.parse(release(asset("")+","+checksum),REPO,"0.2.0");assertEquals("",found.hash);assertTrue(found.checksumUrl.endsWith(".sha256"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.parse(release(asset("")),REPO,"0.2.0"));}
+    @Test public void checksumSelectsMatchingApk(){String other="b".repeat(64);assertEquals(HASH,ReleasePolicy.checksum(other+"  Other.apk\n"+HASH+" *Ceiling-Scout.apk\n","Ceiling-Scout.apk"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.checksum(other+"  Other.apk","Ceiling-Scout.apk"));}
+    @Test public void rejectsAssetOutsideConfiguredRepoOrTls(){String good="https://github.com/"+REPO+"/releases/download/v0.3.0/Ceiling-Scout.apk";ReleasePolicy.validateAssetUrl(good,REPO);for(String bad:List.of(good.replace("https:","http:"),good.replace("github.com","evil.example"),good.replace(REPO,"attacker/farmer"),good.replace("github.com/","user:pass@github.com/")))assertThrows(IllegalArgumentException.class,()->ReleasePolicy.validateAssetUrl(bad,REPO));}
+    @Test public void redirectsStayOnGithubTlsHosts(){assertTrue(ReleasePolicy.allowedNetworkUrl(URI.create("https://release-assets.githubusercontent.com/id/file")));assertFalse(ReleasePolicy.allowedNetworkUrl(URI.create("http://github.com/file")));assertFalse(ReleasePolicy.allowedNetworkUrl(URI.create("https://githubusercontent.com.evil.example/file")));assertFalse(ReleasePolicy.allowedNetworkUrl(URI.create("https://user@github.com/file")));}
+    @Test public void archiveRequiresSamePackageNewVersionAndExactSigners(){ReleasePolicy.validateIdentity("com.corefilter.farmer",2,List.of("key-a"),"com.corefilter.farmer",3,List.of("key-a"));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.validateIdentity("com.corefilter.farmer",2,List.of("key-a"),"com.other.app",3,List.of("key-a")));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.validateIdentity("com.corefilter.farmer",2,List.of("key-a"),"com.corefilter.farmer",2,List.of("key-a")));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.validateIdentity("com.corefilter.farmer",2,List.of("key-a"),"com.corefilter.farmer",3,List.of("key-b")));assertThrows(IllegalArgumentException.class,()->ReleasePolicy.validateIdentity("com.corefilter.farmer",2,List.of("key-a"),"com.corefilter.farmer",3,List.of()));}
+}
