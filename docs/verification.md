@@ -51,6 +51,19 @@ Burning light can hide enemy bodies. The terrain map is partial; uncertain camer
 - Certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
 - GitHub source: `yogeshkrishna/Corebound_CoreFilter_Farmer`
 
+## Published artifact
+
+The [fresh GitHub build](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/runs/37174349406) passed build, unit, lint, vision and controller replay checks, then verified the original signing certificate before publishing [version 0.3.0](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/tag/v0.3.0).
+
+The public APK was downloaded without account credentials and independently checked against both the GitHub asset digest and checksum attachment. Certificate, package/version and 16 KB page alignment passed. It contains the new MapNavigator implementation.
+
+- Public APK size: `52,073,919` bytes
+- Public APK SHA-256: `b313a08558e180808838e437887935366bbc9ed439137cda87ec21283cd88bad`
+- Original certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
+- Local build SHA-256: `b2f8d735719598a9267d072d167e08b3fcd74f7c913087b013587325bb05507d`
+
+Hosted and incremental local builds differ in two DEX archive entries while retaining the same checked source, package/version and certificate. The canonical APK in `dist/Ceiling-Scout.apk` is the downloaded public asset, with the public checksum.
+
 The public repository was renamed after version 0.2. Existing 0.2 phones may need a one-time Update source change. Version 0.3 uses the current name and accepts a validated same-owner canonical release URL after a future rename. Downloaded APK identity and certificate checks remain required.
 
 Toolchain: Temurin JDK 17.0.20.1, Gradle 8.9, AGP 8.7.3, Android SDK/build-tools 35/35.0.0, bundled ML Kit Latin recognition 16.0.1, Robolectric 4.14.1. Original videos and signing material remain excluded from the repository.
