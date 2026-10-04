@@ -6,6 +6,47 @@ import static com.corefilter.farmer.engine.FarmEngine.*;
 
 /** Generated worlds and actual feedback loops; no recordings are opened. */
 public class CorridorControllerTest {
+    @Test public void cameraGapsRetainLocalGeometryWithoutInventingWorldOffsets(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,true));
+        Frame f=room(700,.45,.50,false,true);f.cameraConfidence=0;n.next(f);
+        MapNavigator.Snapshot saved=n.snapshot();assertEquals(2,saved.screenTerrain.length);
+        assertTrue(Double.isNaN(saved.screenPoses[1][3]));assertEquals(1,saved.screenPoses[1][11],0);
+        byte original=saved.screenTerrain[1][6*48+24];f.terrainCells[6*48+24]=0;
+        assertEquals(original,saved.screenTerrain[1][6*48+24]);
+    }
+    @Test public void unknownBackgroundCannotSuppressTheHiddenRoofScout(){
+        MapNavigator n=new MapNavigator(new Config());
+        for(int i=0;i<3;i++){
+            Frame f=room(i*350,.45+i*.10,i==0?.715:i==1?.60:.62,i==0,false);
+            for(int y=4;y<13;y++)for(int x=1;x<47;x++)f.terrainCells[y*48+x]=0;
+            MapNavigator.Decision d=n.next(f);
+            if(i==2){assertEquals(d.reason,1,d.jumps);assertEquals("SCOUT_HIGH_CEILING",n.snapshot().phase);}
+        }
+    }
+    @Test public void sectorBannerCanInvertDirectionTwiceWithoutARegisteredFloor(){
+        MapNavigator n=new MapNavigator(new Config());
+        for(int i=0;i<4;i++){Frame f=room(i*350,.45,.715,true,true);f.cameraConfidence=0;n.next(f);}
+        Frame lower=room(1400,.45,.715,true,true);lower.cameraConfidence=0;lower.completedSector=1;lower.wallRight=true;
+        assertEquals(-1,n.next(lower).direction);assertEquals(-1,n.snapshot().corridorDirection);
+        lower=room(1750,.45,.715,true,true);lower.cameraConfidence=0;lower.completedSector=1;lower.wallRight=true;
+        assertEquals(-1,n.next(lower).direction);assertEquals("Do not invert twice on the same banner",-1,n.snapshot().corridorDirection);
+        lower=room(2800,.45,.715,true,true);lower.cameraConfidence=0;lower.completedSector=2;lower.wallLeft=true;
+        assertEquals(1,n.next(lower).direction);assertEquals(1,n.snapshot().corridorDirection);
+    }
+    @Test public void visibleLowerPassageCanTurnBeforeLandingWithoutASectorBanner(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,true));
+        Frame lower=room(1400,.70,.45,false,true);lower.cameraY=.50;lower.wallRight=true;
+        MapNavigator.Decision d=n.next(lower);assertFalse(d.reason,d.pause);assertEquals(-1,d.direction);
+    }
+    @Test public void aChosenLowerDirectionSurvivesTheFallAndLandingWithoutAnotherInversion(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,true));
+        Frame corner=room(1400,.70,.715,true,true);corner.completedSector=1;corner.wallRight=true;
+        assertEquals(-1,n.next(corner).direction);
+        Frame falling=room(1750,.65,.50,false,false);falling.cameraY=.60;
+        MapNavigator.Decision d=n.next(falling);assertEquals(-1,d.direction);assertEquals(0,d.jumps);
+        Frame landed=room(2100,.60,.715,true,true);landed.cameraY=.65;
+        d=n.next(landed);assertEquals(-1,d.direction);assertEquals(-1,n.snapshot().corridorDirection);
+    }
     @Test public void standingOnWeakSupportKeepsDrivingWhenMapCannotRegister(){
         MapNavigator n=new MapNavigator(new Config());int pulses=0;
         for(int i=0;i<14;i++){

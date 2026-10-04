@@ -1,4 +1,4 @@
-CEILING SCOUT 0.4.1 — PHONE UPDATE
+CEILING SCOUT 0.4.2 — PHONE UPDATE
 
 1. In your existing Ceiling Scout app, tap Check for updates > Download & install.
    Version 0.2.0 after the repository rename: choose Update source, enter
@@ -35,4 +35,4 @@ then removes only the corresponding verified phone copies.
 Each ZIP includes map.png (picture) and map.json (raw observations/build/confidence).
 Unknown areas remain blank. Fixed-pool identification is for a future iteration.
 
-See README.md, docs/map-export.md and docs/verification-0.4.1.md for details.
+See README.md, docs/map-export.md and docs/verification-0.4.2.md for details.

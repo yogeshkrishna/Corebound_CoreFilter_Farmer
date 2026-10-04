@@ -1,4 +1,4 @@
-# Corridor controller, version 0.4.1
+# Corridor controller, version 0.4.2
 
 The controller commits to a direction through each cavern. Its normal action is forward movement with a base jump when grounded and when the measured trajectory clears the roof. It does not navigate an air grid or spend all Hookshots as a repeated jump batch.
 
@@ -11,11 +11,17 @@ The controller commits to a direction through each cavern. Its normal action is 
 5. **Descend and turn.** Follow a mapped floor opening. A lower landing together with an enclosing wall and free passage on the opposite side establishes a direction change. A screenshot edge, stalled action or ambiguous camera view cannot establish a turn.
 6. **Revisit.** Keep off-screen targets at their observed world positions. Return toward a missed target, attempting contact through a ground jump or an overhead interception when necessary. Return time depends on distance and learned horizontal speed. At the exit, a fresh positive ordinary-enemy count starts a return sweep even if no enemy was detected. A moving sweep continues until the observed corridor start or rear wall; ten elapsed seconds cannot count as a completed sweep. A stalled return releases and pauses rather than claiming success.
 
+In 0.4.2, unknown background above the crawler no longer suppresses a roof scout. A visible roof must supply a horizontal underside across the crawler's vicinity; one pillar cell does not establish a roof. A scout coasts for a second fresh roof view instead of immediately falling after its first glimpse. Roof contact still releases upward input immediately.
+
+Sector-completed banners are included in asynchronous upper-half text reading. A new completion or a measured descent retains a turn candidate independently of floor registration. A closing wall in the old direction plus measured open space behind it permits a committed reversal. State is cleared together so the same banner cannot flip it twice. A lower landing by itself does not reverse an already corrected direction.
+
 A visible gate does not start an animation timer. A zero count permits onward movement, while possible hanging enemies and uninspected roofs retain their own records. Ordinary enemy counts do not prove that a Spectrum was found.
 
 ## Measurement and action
 
 `PixelVision` measures the hull, contacts, enemy candidates and a 48 × 24 terrain grid. Grey colour alone is insufficient for mapped rock: long rectangular faces and orthogonal edges supply geometry evidence. Internal texture holes, illumination and a tall wall clipped by the HUD have specific handling. Jagged strips are rejected. HUD, controls, actors and screenshot edges remain unknown.
+
+Straight faces can also survive disconnected colour components when a perpendicular corner or a second parallel face supplies support. Measured brightness contrast handles a lit edge against dim grey background. Foot support allows the small gap between the detected golden hull and the visible platform; ceiling and side-contact gaps remain unchanged.
 
 A clearly measured floor gives support evidence. Effect-obscured foot pixels give a weak candidate. Strong mapped support still requires stationary world-space foot evidence. Driving also accepts two fresh, stable local foot-support observations after the normal jump flight interval; this does not depend on camera registration and never inserts terrain or a fictitious path. If a base jump was ignored during the entry animation and the crawler remains supported, the controller retries it instead of permanently consuming a charge.
 
@@ -33,4 +39,6 @@ Terrain observations accumulate into an atlas. Adjacent floor, roof and wall seg
 
 The current controller starts a fresh atlas each run. Stored bundles are for future layout comparison; the app does not yet identify a fixed layout pool or replay a previous route.
 
-See [verification](verification-0.4.1.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+The JSON additionally retains up to 450 terrain grids sampled at least 700 ms apart, with capture times, camera confidence, player position and corridor direction. Missing camera offsets are null. These local observations survive camera gaps without being pasted into the world atlas at invented positions.
+
+See [verification](verification-0.4.2.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.

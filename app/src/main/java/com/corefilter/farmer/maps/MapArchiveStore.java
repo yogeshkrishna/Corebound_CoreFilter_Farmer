@@ -86,6 +86,10 @@ public final class MapArchiveStore {
         root.put("cells",rows(s.cells,MAX_CELLS)).put("borders",rows(s.borders,MAX_BORDERS)).put("path",rows(s.path,MAX_PATH)).put("coverage",rows(s.coverage,MAX_COVERAGE)).put("enemies",rows(s.enemies,MAX_ENEMIES));
         root.put("controlTrace",rows(s.controlTrace,1200)).put("controlReasons",new JSONArray(Arrays.asList(s.controlReasons)));
         root.getJSONObject("fields").put("controlTrace","[capturedAtMs,processedAtMs,screenPlayerX,screenPlayerY,playerConfidence,strongGround,footCandidate,controlGround,cameraConfidence,direction,jumps,usedJumps,corridorDirection,wallLeft,wallRight,ceilingContact]; controlReasons has the corresponding decision text");
+        root.put("screenPoses",rows(s.screenPoses,450));
+        JSONArray localTerrain=new JSONArray();for(byte[] cells:s.screenTerrain){JSONArray grid=new JSONArray();for(byte cell:cells)grid.put((int)cell);localTerrain.put(grid);}
+        root.put("screenTerrain",localTerrain);
+        root.getJSONObject("fields").put("screenPoses","[capturedAtMs,registrationEpoch,section,cameraXOrNull,cameraYOrNull,cameraConfidence,screenPlayerX,screenPlayerY,corridorDirection,columns,rows,roofVisible]; screenTerrain contains the corresponding row-major 0 unknown/1 free/2 solid grid. Latest 450 views sampled at least 700ms apart. Unknown offsets are not inferred.");
         double[][] history=history(s);root.put("enemyHistory",rows(history,MAX_HISTORY));
         root.put("retention",new JSONObject().put("cells",arrayInfo(s.cells,MAX_CELLS)).put("borders",arrayInfo(s.borders,MAX_BORDERS)).put("path",arrayInfo(s.path,MAX_PATH)).put("coverage",arrayInfo(s.coverage,MAX_COVERAGE)).put("enemies",arrayInfo(s.enemies,MAX_ENEMIES)).put("enemyHistory",arrayInfo(history,MAX_HISTORY)));
         JSONArray incomplete=new JSONArray();if(!s.complete)incomplete.put("Navigator did not verify complete observed coverage");if(s.inspectedCeilings<s.ceilingSections)incomplete.put("Some observed ceiling sections remain uninspected");

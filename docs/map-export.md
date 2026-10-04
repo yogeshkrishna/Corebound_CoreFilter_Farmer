@@ -38,6 +38,8 @@ Click **Download ZIP** beside a map. Downloading or previewing never deletes a p
 
 `map.json` includes your saved build and equipment notes; model confidence; camera and player positions; coordinate units and viewport aspect ratio; section bounds; observed occupancy cells; rectangular border segments; player path samples; ceiling inspection coverage; enemy sightings and burn attempts; the run outcome; and whether observation coverage was incomplete.
 
+Version 0.4.2 also includes `screenTerrain` and matching `screenPoses`: up to 450 sampled local terrain views, including views taken while world registration was unavailable. A null camera offset means the view could not be placed reliably in the union picture. The raw observation is retained for later alignment instead of being discarded or assigned an invented world position.
+
 X units are captured viewport widths. Y units are captured viewport heights and increase downward. The aspect ratio preserves their physical proportion in the picture. Unlinked sections have separate local origins; no connecting passage is invented. `complete` describes the navigator's coverage assessment, while `runSucceeded` describes the end-of-run outcome.
 
 Bounded model/export limits are recorded in the JSON retention fields. The picture supports up to 16 section panels; additional retained geometry remains in JSON and is identified explicitly. Low-confidence boundaries use dashed lines. A blue dot marks the first observed spawn/path point in the first section and a local anchor in later unlinked sections. Orange dots mark observed horizontal path reversals, including backtracking toward enemies.

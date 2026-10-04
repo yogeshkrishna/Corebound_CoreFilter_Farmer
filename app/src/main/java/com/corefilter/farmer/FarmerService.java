@@ -150,7 +150,7 @@ public final class FarmerService extends AccessibilityService {
         final int textTop=vision.selectedPanel?(int)(bitmap.getHeight()*.48):0;
         final int textScale=vision.selectedPanel||hudOnly?2:1;
         final Bitmap textImage;
-        if(vision.selectedPanel||hudOnly){int textHeight=hudOnly?Math.max(1,(int)(bitmap.getHeight()*.30)):bitmap.getHeight()-textTop;Bitmap panel=Bitmap.createBitmap(bitmap,textLeft,textTop,bitmap.getWidth()-textLeft,textHeight);textImage=Bitmap.createScaledBitmap(panel,panel.getWidth()*textScale,panel.getHeight()*textScale,true);if(panel!=bitmap&&panel!=textImage)panel.recycle();}else textImage=bitmap;
+        if(vision.selectedPanel||hudOnly){int textHeight=hudOnly?Math.max(1,(int)(bitmap.getHeight()*.50)):bitmap.getHeight()-textTop;Bitmap panel=Bitmap.createBitmap(bitmap,textLeft,textTop,bitmap.getWidth()-textLeft,textHeight);textImage=Bitmap.createScaledBitmap(panel,panel.getWidth()*textScale,panel.getHeight()*textScale,true);if(panel!=bitmap&&panel!=textImage)panel.recycle();}else textImage=bitmap;
         recognizer.process(InputImage.fromBitmap(textImage,0)).addOnSuccessListener(text->{
             if(ticket!=generation||!running||destroyed)return;
             List<FarmEngine.Token> tokens=new ArrayList<>();StringBuilder all=new StringBuilder();
@@ -161,7 +161,9 @@ public final class FarmerService extends AccessibilityService {
     }
     private void readHud(Bitmap bitmap,String pkg,long capturedAt,int ticket){
         hudOcrBusy=true;lastOcrAt=SystemClock.elapsedRealtime();
-        Bitmap crop=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),Math.max(1,(int)(bitmap.getHeight()*.30)));
+        // Sector-completed banners sit below the HUD. Retain them so a camera
+        // gap cannot erase the evidence that the next cavern changes direction.
+        Bitmap crop=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),Math.max(1,(int)(bitmap.getHeight()*.50)));
         Bitmap textImage=Bitmap.createScaledBitmap(crop,crop.getWidth()*2,crop.getHeight()*2,true);
         if(crop!=bitmap&&crop!=textImage)crop.recycle();
         recognizer.process(InputImage.fromBitmap(textImage,0)).addOnSuccessListener(text->{

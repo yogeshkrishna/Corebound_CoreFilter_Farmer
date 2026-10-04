@@ -373,6 +373,10 @@ public final class PixelVision {
             if((horizontal<minRun||vertical<minRun)&&verified<2*Math.max(bw,bh)*.72&&!clippedHorizontal&&!clippedVertical&&!tallFace)continue;
             for(int i=0;i<tail;i++)if(!tallFace||(queue[i]%w-faceX)*faceSide<=0)evidence.solid[queue[i]]=true;
         }
+        // Texture and attack light can split a real rectangle into several
+        // colour components. Recover its measured faces independently, using
+        // perpendicular corners or a second parallel face to reject tooth bases.
+        recoverStraightFaces(p,candidate,w,h,evidence);
         for(int gy=0;gy<result.terrainRows;gy++)for(int gx=0;gx<result.terrainCols;gx++) {
             double nx=(gx+.5)/result.terrainCols,ny=(gy+.5)/result.terrainRows;
             if(masked(nx,ny,result))continue;
@@ -397,6 +401,58 @@ public final class PixelVision {
         }
         return evidence;
     }
+    private static void recoverStraightFaces(int[] p,boolean[] rock,int w,int h,TerrainEvidence e){
+        int minimum=Math.max(16,(int)Math.ceil(h*.06)),corner=Math.max(6,(int)Math.ceil(h*.025));
+        for(boolean horizontal:new boolean[]{true,false})for(int side:new int[]{-1,1}){
+            int across=horizontal?h:w,along=horizontal?w:h;
+            for(int line=2;line<across-2;line++){
+                int start=-1;
+                for(int at=2;at<along-1;at++){
+                    int xx=horizontal?at:line,yy=horizontal?line:at;
+                    boolean edge=at<along-2&&facePixel(p,rock,w,h,xx,yy,horizontal?0:side,horizontal?side:0);
+                    if(edge&&start<0)start=at;
+                    if(!edge&&start>=0){
+                        int end=at-1;
+                        if(end-start+1>=minimum){
+                            int x1=horizontal?start:line,y1=horizontal?line:start,x2=horizontal?end:line,y2=horizontal?line:end;
+                            boolean supported=cornerFace(p,rock,w,h,x1,y1,horizontal,side,corner)||cornerFace(p,rock,w,h,x2,y2,horizontal,side,corner);
+                            // A thin platform has two parallel faces, even if its
+                            // short end cannot supply a tall perpendicular corner.
+                            if(!supported&&horizontal)for(int depth=1;depth<=6&&!supported;depth++){
+                                int other=line-side*depth,hits=0;
+                                for(int x=start;x<=end;x++)if(facePixel(p,rock,w,h,x,other,0,-side))hits++;
+                                supported=hits>=(end-start+1)*.8;
+                            }
+                            if(supported)for(int pos=start;pos<=end;pos++)for(int depth=0;depth<7;depth++){
+                                int xx2=horizontal?pos:line-side*depth,yy2=horizontal?line-side*depth:pos;
+                                if(xx2<0||xx2>=w||yy2<0||yy2>=h||!rock[yy2*w+xx2])break;
+                                e.solid[yy2*w+xx2]=true;
+                            }
+                        }
+                        start=-1;
+                    }
+                }
+            }
+        }
+    }
+    private static boolean facePixel(int[] p,boolean[] rock,int w,int h,int x,int y,int dx,int dy){
+        if(x<2||x>=w-2||y<2||y>=h-2)return false;
+        int at=y*w+x,out=(y+dy)*w+x+dx;
+        boolean outside=!rock[out]&&boundaryFree(p[out])||brightness(p[at])-brightness(p[out])>=18;
+        return rock[at]&&rock[(y-dy)*w+x-dx]&&outside;
+    }
+    private static int brightness(int color){return Math.max((color>>>16)&255,Math.max((color>>>8)&255,color&255));}
+    private static boolean cornerFace(int[] p,boolean[] rock,int w,int h,int x,int y,boolean horizontal,int side,int minimum){
+        for(int offset=-2;offset<=2;offset++)for(int perpendicular:new int[]{-1,1}){
+            int hits=0;
+            for(int depth=0;depth<minimum+2;depth++){
+                int xx=horizontal?x+offset:x-side*depth,yy=horizontal?y-side*depth:y+offset;
+                if(facePixel(p,rock,w,h,xx,yy,horizontal?perpendicular:0,horizontal?0:perpendicular))hits++;
+            }
+            if(hits>=minimum)return true;
+        }
+        return false;
+    }
     private static boolean[] exterior(int[] ids,int id,int w,int h,int minX,int maxX,int minY,int maxY) {
         int l=Math.max(0,minX-1),r=Math.min(w-1,maxX+1),t=Math.max(0,minY-1),b=Math.min(h-1,maxY+1);
         boolean[] outside=new boolean[ids.length];int[] q=new int[(r-l+1)*(b-t+1)];int head=0,tail=0;
@@ -419,8 +475,9 @@ public final class PixelVision {
         int left=Math.max(1,(int)(r.playerLeft*w)),right=Math.min(w-2,(int)(r.playerRight*w)-1);
         int top=Math.max(1,(int)(r.playerTop*h)),bottom=Math.min(h-2,(int)(r.playerBottom*h)-1);
         int gap=Math.max(2,(int)(h*.018));
-        r.grounded=horizontalContact(e.solid,w,h,left+1,right-1,bottom+1,bottom+gap+1,.50);
-        r.groundContactCandidate=r.grounded||horizontalContact(e.contactCandidate,w,h,left+1,right-1,bottom+1,bottom+gap+1,.50);
+        int feetGap=Math.max(gap,(int)(h*.035));
+        r.grounded=horizontalContact(e.solid,w,h,left+1,right-1,bottom+1,bottom+feetGap+1,.50);
+        r.groundContactCandidate=r.grounded||horizontalContact(e.contactCandidate,w,h,left+1,right-1,bottom+1,bottom+feetGap+1,.50);
         r.ceilingReached=horizontalContact(e.solid,w,h,left+1,right-1,top-gap,top,.65);
         r.wallLeft=verticalContact(e.solid,w,h,left-gap,left,top+2,bottom-2);
         r.wallRight=verticalContact(e.solid,w,h,right+1,right+gap+1,top+2,bottom-2);
