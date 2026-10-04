@@ -11,6 +11,10 @@ for folder in ['app/src','gradle','tools','tests','docs','.github']:
 fixtures=['clip2_56.5.png','clip1_81.5.png','clip2_14.0.png','clip2_49.0.png','clip2_55.png','clip2_58.png','clip1_83.png','clip2_60.png','clip2_0.png','video_metadata.json']
 files.extend(root/'analysis'/name for name in fixtures)
 files.extend(root/'analysis'/'v2'/('field_'+str(t)+'.png') for t in [0,10,25,40,130,170])
+v3_fixtures=['farmer_56.00.png','farmer_58.00.png','farmer_64.00.png','farmer_15.00.png','farmer_168.00.png',
+             'manual_5.50.png','manual_5.75.png','manual_6.00.png','manual_6.25.png','manual_6.50.png',
+             'manual_8.75.png','manual_9.00.png','manual_9.25.png']
+files.extend(root/'analysis'/'v3'/name for name in v3_fixtures)
 destination=root/'dist'/'Ceiling-Scout-source.zip'
 destination.parent.mkdir(exist_ok=True)
 with ZipFile(destination,'w',ZIP_DEFLATED,compresslevel=9) as z:

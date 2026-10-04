@@ -1,6 +1,6 @@
-# Verification record — 0.2.0
+# Verification record — 0.3.0
 
-Validated on 3 October 2026 on Windows. The APK is a personal debug build signed with the original Android debug certificate, matching version 0.1.0.
+Checked on 4 October 2026 on Windows. This personal Android build reuses the original signing certificate. The earlier release record is retained in [verification-0.2.0.md](verification-0.2.0.md).
 
 ## Reproduce
 
@@ -8,66 +8,49 @@ Validated on 3 October 2026 on Windows. The APK is a personal debug build signed
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-This runs APK assembly, JUnit/Robolectric, Android lint, and the recorded-frame checks.
+The script assembles the APK, runs JUnit/Robolectric and Android lint, then compiles and runs the independent recorded-frame and complete-controller replay checks.
 
-## Results
+## Scope of the checks
 
 | Check | Result |
 |---|---|
-| Java compilation and APK assembly | Passed |
-| FarmEngine tests | 28 passed |
-| Farming regression tests | 17 passed |
-| ScreenInterpreter tests | 3 passed |
-| Home/profile/layout tests, simulated Android API 35 | 6 passed |
-| Android gesture construction tests | 4 passed |
-| GitHub release and update identity policy tests | 11 passed |
-| Installer callback/digest tests | 3 passed |
-| Total JUnit/Robolectric | 72 passed; 0 failed; 0 errors; 0 skipped |
-| Pixel/decision fixture checks | 120 passed, including real frames at three resolutions |
+| APK assembly / Java compilation | Passed |
+| JUnit and simulated Android checks | 101 passed; 0 failures, errors or skipped |
+| Map / engine / selection regressions | 25 / 28 / 7 passed |
+| Vision corpus at three resolutions | 183 checks passed |
+| Recorded pixels through the complete controller | 20 checks passed |
 | Android lint | 0 errors, 23 warnings |
-| APK signature | Verified; same signing certificate as the installed first build |
-| Native library and ZIP page alignment | `zipalign -c -P 16 4` passed |
-| Package/version | `com.corefilter.farmer`, versionCode 2, versionName 0.2.0 |
-| Minimum/target Android API | 30 / 35 |
-| Network/install permissions | INTERNET and REQUEST_INSTALL_PACKAGES; no ACCESS_NETWORK_STATE |
-| CPU architectures | arm64-v8a, armeabi-v7a, x86, x86_64 |
-| Fresh GitHub build, tests, fixture checks and release publication | [Passed](https://github.com/yogeshkrishna/ceiling-scout/actions/runs/37136608628) |
-| Downloaded public APK | SHA-256 and checksum attachment matched; original certificate, package/version and alignment verified |
+| APK signature and original certificate | Verified |
+| ZIP / native page alignment | `zipalign -c -P 16 4` passed |
 
-The farming regressions cover all seven jumps across an ascent, confirmed ground recharge, ceiling sweep, targets behind/above the player, contact-and-burn traversal, gate backtracking, tier arrows attached to OCR digits, and results/crate/Play over 105 repeat cycles beyond the old run/session caps.
+- Registered world movement while the player remains stationary on screen; particle/HUD flashes cannot establish progress.
+- Persistent ceiling coverage and off-screen targets; inaccessible targets do not starve the reachable frontier.
+- Immediate roof clearance, mapped wall avoidance and recovery after failed horizontal movement.
+- One jump per decision, seven-charge limit, two ground observations after airtime, capture-time velocity and learned jump rise.
+- Body-sized route clearance, protection of known walls from player masking, and bounded low-confidence camera recovery.
+- Verified terrain alignment after registration resets; otherwise old observations remain in an unlinked map section rather than being silently joined or deleted.
+- Explicit sector completion clears ordinary resolved-room tracks; overhead candidates are retained conservatively because they may be non-gating Spectrums.
+- Control/HUD mask boundaries cannot become exploration targets.
+- Complete → crate Close → selected-level Play across 105 cycles; unreadable tier retry and rejection of explicit wrong tiers.
+- Latest-frame mailbox replacement, stale/generation rejection, and rejection of delayed observations predating a jump's physical response.
+- Saved build/calibration migration, Android gesture construction, update hash/package/signature policy and installer callback checks.
 
-The Android gesture tests establish distinct press/release strokes alongside a movement hold and a 700 ms release bound. Home tests cover editable Hookshots, profile migration preserving calibration, invalid timing rejection, and a narrow portrait layout with explicit system-bar insets and 48 dp home action targets.
-
-Updater checks cover stable semantic versions, checksum selection, repository/redirect validation, app identity/version/signature rejection, actual file hashing, forged callback rejection, and cancellation cleanup. They do not exercise Android's real package installation UI.
-
-The small corpus retains the original reward, gameplay and menu fixtures plus six samples from the later phone trial. New checks cover split-platform feet, airborne frames, menu Play, missed hoverer candidates, and the centred result Continue. Controlled geometry also checks floor and ceiling contact. Enemy candidates do not establish Spectrum/Dreadnought identity or burn completion.
-
-## Lint warnings
-
-No broad suppression or baseline was added. Remaining categories: ClickableViewAccessibility (2), DataExtractionRules (1), DrawAllocation (2), RtlHardcoded (3), SetTextI18n (8), StaticFieldLeak (1), UnusedAttribute (1), UnusedResources (1), and UseSwitchCompatOrMaterialCode (4). Full generated reports are in `app/build/reports/`.
+The recorded corpus adds the actual wall-contact frames, previously missed red-core/cyan ground bots, and manual landing sequence at three resolutions. The independent controller replay passes pixels through PixelVision, TemporalVision, ScreenInterpreter and FarmEngine: it avoids holding right into the recorded wall and identifies the recorded apparent upward screen motion as a world-space fall.
 
 ## Device limits
 
-The user supplied a phone trial of version 0.1. No phone was connected for development of version 0.2, and a hardware-accelerated emulator was unavailable. Robolectric is a simulated Android runtime, not a phone test.
+No phone is connected to this workspace. Robolectric is a simulated Android runtime, and prerecorded observations do not react to the newly proposed inputs. The tests therefore do not prove unattended completion, every enemy's detection, live OCR/touch performance, or a filters-per-hour improvement.
 
-The updated overlay appearance on the iQOO display, clean-window/hidden-bar screenshot path, live ML Kit OCR, real multi-touch input, randomized ceiling coverage, ads, and native update installation need a phone trial. No fastest-route, unattended success-rate or filters-per-hour claim is established.
+Burning light can hide enemy bodies. The terrain map is partial; uncertain camera resets can leave separate map sections that cannot yet be linked for backtracking. The controller waits, probes or pauses on uncertain observations instead of assuming a clear passage. Native installation and changed ad creatives still need verification on the phone.
 
-## Local APK
+## Release identity
 
-- File: `dist/Ceiling-Scout.apk`
-- Size: 52,008,383 bytes
-- SHA-256: `8e6442f0df73f41f33323715f7af4e69a2248c20ddad08994ba9f2b0e557f687`
-- Signing certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
+- Package: `com.corefilter.farmer`
+- Version: `0.3.0`, versionCode `3`
+- Minimum / target API: `30` / `35`
+- Certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`
+- GitHub source: `yogeshkrishna/Corebound_CoreFilter_Farmer`
 
-GitHub publishes its own asset checksum alongside the APK. A CI rebuild may have a different file hash while retaining the same package, version and signing certificate.
+The public repository was renamed after version 0.2. Existing 0.2 phones may need a one-time Update source change. Version 0.3 uses the current name and accepts a validated same-owner canonical release URL after a future rename. Downloaded APK identity and certificate checks remain required.
 
-## Published APK
-
-- [Ceiling Scout 0.2.0](https://github.com/yogeshkrishna/ceiling-scout/releases/tag/v0.2.0)
-- Size: 52,008,383 bytes
-- SHA-256: `8c8bc0d5fed80b48ab805151fe0ebe6fa9f34f04741b8faf9b37d7809a567c75`
-- Signing certificate: the same original `65aa3b42...37f5097` certificate shown above
-
-The first hosted build used another debug certificate despite a restored key. That release was withdrawn and removed. The corrected workflow selects the private original key explicitly and checks its complete certificate fingerprint before publication. The final public artifact was downloaded without account credentials using the updater's request headers and checked independently.
-
-Toolchain: Eclipse Temurin JDK 17.0.20.1, Gradle 8.9, AGP 8.7.3, Android compile SDK/build-tools 35/35.0.0, bundled ML Kit Latin text recognition 16.0.1, Robolectric 4.14.1.
+Toolchain: Temurin JDK 17.0.20.1, Gradle 8.9, AGP 8.7.3, Android SDK/build-tools 35/35.0.0, bundled ML Kit Latin recognition 16.0.1, Robolectric 4.14.1. Original videos and signing material remain excluded from the repository.

@@ -80,7 +80,7 @@ public class MainActivityTest {
             field(editor,"hookshotCount").setText("4");
             field(editor,"extraJumps").setText("2");
             field(editor,"moveMs").setText("650");
-            field(editor,"jumpSpacingMs").setText("210");
+            field(editor,"jumpSpacingMs").setText("600");
             field(editor,"settleMs").setText("150");
             field(editor,"maxRunSeconds").setText("300");
             ((Switch)editor.findViewWithTag("continuousFarm")).setChecked(false);
@@ -98,7 +98,7 @@ public class MainActivityTest {
             assertEquals(2, restored.extraJumps);
             assertEquals(11, restored.totalJumpBudget());
             assertEquals(650, restored.moveMs);
-            assertEquals(210, restored.jumpSpacingMs);
+            assertEquals(600, restored.jumpSpacingMs);
             assertEquals(150, restored.settleMs);
             assertFalse(restored.continuousFarm);
             assertEquals(300, restored.maxRunSeconds);
@@ -126,7 +126,7 @@ public class MainActivityTest {
         Profile profile = new Profile();
         profile.moveMs = 600; profile.jumpMs = 70; profile.jumpEveryMs = 2500;
         profile.settleMs = 150; profile.maxRunSeconds = 450; profile.maxSessionMinutes = 120;
-        profile.hookshotCount=3;profile.extraJumps=1;profile.jumpSpacingMs=220;profile.continuousFarm=false;
+        profile.hookshotCount=3;profile.extraJumps=1;profile.jumpSpacingMs=650;profile.continuousFarm=false;
         profile.watchFilterAds = false; profile.autoControls = false;
         profile.leftX = .1f; profile.leftY = .7f; profile.rightX = .3f; profile.rightY = .75f;
         profile.jumpX = .9f; profile.jumpY = .6f;
@@ -139,7 +139,7 @@ public class MainActivityTest {
         FarmEngine.Config config = restored.config();
         assertEquals(600, config.moveMs); assertEquals(70, config.jumpTapMs);
         assertEquals(2500, config.jumpIntervalMs); assertEquals(150, config.settleMs);
-        assertEquals(8,config.jumpBudget);assertEquals(220,config.jumpSpacingMs);assertFalse(config.continuousFarm);
+        assertEquals(8,config.jumpBudget);assertEquals(650,config.jumpSpacingMs);assertFalse(config.continuousFarm);
         assertEquals(450, config.maxRunSeconds); assertEquals(120, config.maxSessionMinutes);
         assertFalse(config.watchFilterAds);
     }
@@ -152,7 +152,7 @@ public class MainActivityTest {
         assertEquals(420,upgraded.moveMs);assertEquals(180,upgraded.settleMs);
         assertEquals(3,upgraded.hookshotCount);assertEquals(7,upgraded.totalJumpBudget());assertTrue(upgraded.continuousFarm);
         assertEquals("My custom equipment",upgraded.notes);assertEquals(.93f,upgraded.jumpX,.0001f);assertFalse(upgraded.watchFilterAds);
-        assertEquals(2,context.getSharedPreferences("profile",0).getInt("schemaVersion",0));
+        assertEquals(3,context.getSharedPreferences("profile",0).getInt("schemaVersion",0));
     }
 
     @Test public void currentCustomTimingsSurviveAndUnsafeHoldIsCapped() {
@@ -161,6 +161,15 @@ public class MainActivityTest {
         Profile upgraded=Profile.load(context);assertEquals(530,upgraded.moveMs);assertEquals(140,upgraded.settleMs);
         upgraded.moveMs=900;assertEquals(700,upgraded.config().moveMs);
         upgraded.save(context);assertEquals(700,Profile.load(context).moveMs);
+    }
+
+    @Test public void versionTwoJumpBatchesMigrateWithoutLosingBuildOrCalibration(){
+        Context context=RuntimeEnvironment.getApplication();
+        context.getSharedPreferences("profile",0).edit().putInt("schemaVersion",2).putInt("jumpSpacingMs",190)
+                .putInt("moveMs",600).putString("weapons","My Ember").putFloat("leftX",.12f).commit();
+        Profile p=Profile.load(context);assertEquals(500,p.jumpSpacingMs);assertEquals(600,p.moveMs);
+        assertEquals("My Ember",p.weapons);assertEquals(.12f,p.leftX,.0001f);
+        p.jumpSpacingMs=900;p.save(context);assertEquals(900,Profile.load(context).jumpSpacingMs);
     }
 
     private static EditText field(View editor,String key){

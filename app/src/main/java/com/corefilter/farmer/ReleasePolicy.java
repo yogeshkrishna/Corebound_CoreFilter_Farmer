@@ -41,6 +41,10 @@ final class ReleasePolicy {
         if(release.optBoolean("draft")||release.optBoolean("prerelease"))return null;
         String tag=release.optString("tag_name");
         if(!newer(tag,current))return null;
+        // GitHub's API redirects a renamed repository. Its canonical release page
+        // may then name the new repository while the saved slug still has the old one.
+        // Keep owner/HTTPS validation and require every asset to use that same repo.
+        repo=canonicalRepository(release.optString("html_url"),repo,tag);
         JSONArray assets=release.optJSONArray("assets");
         if(assets==null)throw new IllegalArgumentException("This release has no downloadable APK.");
         JSONObject apk=null;
@@ -74,6 +78,14 @@ final class ReleasePolicy {
             URI uri=new URI(url);String expected="/"+repo+"/releases/download/";
             if(!"https".equals(uri.getScheme())||!"github.com".equalsIgnoreCase(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1||uri.getFragment()!=null||!uri.getPath().startsWith(expected))throw new IllegalArgumentException();
         }catch(Exception ex){throw new IllegalArgumentException("The release attachment must come from this GitHub repository.");}
+    }
+    static String canonicalRepository(String page,String requested,String tag) {
+        if(page==null||page.isEmpty())return requested;
+        try{
+            URI uri=new URI(page);String[] parts=uri.getRawPath().split("/",-1);
+            if(!"https".equals(uri.getScheme())||!"github.com".equalsIgnoreCase(uri.getHost())||uri.getUserInfo()!=null||uri.getPort()!=-1||uri.getQuery()!=null||uri.getFragment()!=null||parts.length!=6||!parts[3].equals("releases")||!parts[4].equals("tag")||!parts[5].equals(tag)||!parts[1].equalsIgnoreCase(requested.split("/")[0]))throw new IllegalArgumentException();
+            return repository(parts[1]+"/"+parts[2]);
+        }catch(Exception ex){throw new IllegalArgumentException("The canonical release must belong to the configured GitHub owner.");}
     }
     static boolean allowedNetworkUrl(URI uri) {
         String host=uri.getHost();

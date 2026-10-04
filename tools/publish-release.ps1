@@ -1,5 +1,5 @@
 param(
-    [string]$Repository = 'yogeshkrishna/ceiling-scout',
+    [string]$Repository = 'yogeshkrishna/Corebound_CoreFilter_Farmer',
     [string]$NotesFile
 )
 

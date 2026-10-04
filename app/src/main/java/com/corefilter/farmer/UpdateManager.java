@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Explicit, user-initiated updates. No screenshots or gameplay data enter this path. */
 public final class UpdateManager {
-    static final String DEFAULT_REPO="yogeshkrishna/ceiling-scout";
+    static final String DEFAULT_REPO="yogeshkrishna/Corebound_CoreFilter_Farmer";
     static final String PREFS="updates", CALLBACK="com.corefilter.farmer.UPDATE_RESULT";
     private static final ExecutorService WORKER=Executors.newSingleThreadExecutor();
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
@@ -27,7 +27,9 @@ public final class UpdateManager {
 
     public static void show(Activity activity){
         if(BUSY.get()){Toast.makeText(activity,"An update check or download is already running.",Toast.LENGTH_SHORT).show();return;}
-        check(activity,prefs(activity).getString("repository",DEFAULT_REPO));
+        String repo=prefs(activity).getString("repository",DEFAULT_REPO);
+        if("yogeshkrishna/ceiling-scout".equalsIgnoreCase(repo)){repo=DEFAULT_REPO;prefs(activity).edit().putString("repository",repo).apply();}
+        check(activity,repo);
     }
     private static void configure(Activity activity){
         LinearLayout content=Ui.column(activity);int pad=Ui.dp(activity,20);content.setPadding(pad,pad,pad,pad);

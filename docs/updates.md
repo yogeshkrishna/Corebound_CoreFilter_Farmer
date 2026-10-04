@@ -1,8 +1,10 @@
 # Phone updates
 
-Install Ceiling Scout 0.2 once over your current app. Do not uninstall the old app: installing over it keeps your build settings and control calibration.
+Install the current Ceiling Scout APK over your existing app. Do not uninstall first: installing over it keeps your build settings and control calibration.
 
-After that, open **Ceiling Scout → Check for updates**. The repository starts as `yogeshkrishna/ceiling-scout`; it is editable if the project moves. A newer public release offers **Download & install**. The app downloads the APK itself, checks its SHA-256, and verifies that Android sees the same app, a newer version code and the original signing certificate. It then opens Android’s installer. Confirm **Update** to finish.
+After that, open **Ceiling Scout → Check for updates**. The repository starts as `yogeshkrishna/Corebound_CoreFilter_Farmer`; it is editable if the project moves. A newer public release offers **Download & install**. The app downloads the APK itself, checks its SHA-256, and verifies that Android sees the same app, a newer version code and the original signing certificate. It then opens Android’s installer. Confirm **Update** to finish.
+
+**Updating from 0.2.0 after the repository rename:** Check for updates may report that the attachment belongs to another repository. Choose **Update source**, enter `yogeshkrishna/Corebound_CoreFilter_Farmer`, and tap **Save & check**. This is a one-time change. Version 0.3.0 uses the current name and accepts a canonical same-owner GitHub release after a repository rename; APK signature checks remain required.
 
 The first time, Android may ask you to allow Ceiling Scout to install apps. Choose **Open settings**, enable **Allow from this source**, and return to Ceiling Scout. It continues with the already downloaded APK. Installation approval is Android’s own screen; the farmer does not operate it.
 
@@ -19,13 +21,13 @@ The release workflow restores that original key from the GitHub Actions secret *
 ```powershell
 $signingBytes = [System.IO.File]::ReadAllBytes((Join-Path $env:USERPROFILE '.android\debug.keystore'))
 $signingBase64 = [Convert]::ToBase64String($signingBytes)
-$signingBase64 | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64 --repo yogeshkrishna/ceiling-scout
+$signingBase64 | gh secret set ANDROID_DEBUG_KEYSTORE_BASE64 --repo yogeshkrishna/Corebound_CoreFilter_Farmer
 Remove-Variable signingBytes, signingBase64
 ```
 
 Do this only with the original key that signed the installed APK. The secret is not printed by this command. The workflow uses the standard debug alias and password, so a custom release key requires an explicit signing configuration and a planned migration.
 
-Commit and push the reviewed source, then either push a matching version tag or run **Actions → Publish Android update → Run workflow**. The workflow builds, runs unit tests, recorded-frame checks and lint, verifies the original signing certificate, creates the checksum, and publishes a release. An already published tag is not overwritten. The corrected workflow passed its [first verified release run](https://github.com/yogeshkrishna/ceiling-scout/actions/runs/37136608628) on 3 October 2026; its downloaded APK matched the checksum and the original certificate.
+Commit and push the reviewed source, then either push a matching version tag or run **Actions → Publish Android update → Run workflow**. The workflow builds, runs unit tests, recorded-frame checks and lint, verifies the original signing certificate, creates the checksum, and publishes a release. An already published tag is not overwritten. The corrected workflow passed its [first verified release run](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/runs/37136608628) on 3 October 2026; its downloaded APK matched the checksum and the original certificate.
 
 For a local build and publication from the same machine/signing key:
 

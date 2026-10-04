@@ -17,8 +17,17 @@ public final class PixelVision {
         public boolean gate;
         public double gateX = -1, gateY = -1;
         public double playerX = -1, playerY = -1, playerConfidence;
+        public double playerLeft=-1, playerTop=-1, playerRight=-1, playerBottom=-1;
         /** Nearby horizontal terrain at the visible crawler's feet/head. Confirm over time. */
         public boolean grounded, ceilingReached;
+        public boolean wallLeft, wallRight;
+        /** Conservative foreground occupancy. Unknown observations never erase the map. */
+        public int terrainCols=48, terrainRows=24;
+        public byte[] terrainCells=new byte[48*24];
+        /** Camera translation belongs to TemporalVision, not brightness signatures. */
+        public double cameraDx, cameraDy, cameraX, cameraY, cameraConfidence;
+        public int registrationEpoch;
+        public boolean registrationReset, sceneChanged;
         /** Pink enemy-body candidates [left,top,right,bottom,burningConfidence,dreadnoughtConfidence].
          * Appearance alone does not identify a Spectrum or prove a kill. */
         public double[][] enemyBoxes = new double[0][];
@@ -66,13 +75,16 @@ public final class PixelVision {
             }
         }
         // Broad enough for both the blue shield and lime health-bar footage.
-        result.gameplay = hudPixels > 0 && goldHud > hudPixels * .09;
+        // The floating toolbar can cover the health bar. The two adjoining movement
+        // outlines are independent evidence of gameplay and must be checked first.
+        locateControls(p,w,h,result);
+        result.gameplay = (hudPixels > 0 && goldHud > hudPixels * .09) || result.controlsDetected;
         if (result.gameplay) {
-            locateControls(p,w,h,result);
             locatePlayer(p, w, h, result);
             locateGate(p, w, h, result);
             locateTerrainContacts(p, w, h, result);
             locateEnemies(p, w, h, result);
+            locateTerrain(p,w,h,result);
         } else {
             locatePlayPanel(p, w, h, result);
             locateFilters(p, w, h, result);
@@ -106,6 +118,26 @@ public final class PixelVision {
                 if(divider<(bottom-top-8)*.7)continue;
                 result.leftX=(left+length*.25)/w;result.rightX=(left+length*.75)/w;result.leftY=result.rightY=(top+bottom)/(2.*h);result.controlsDetected=true;return;
             }left=right;
+        }
+        // Texture can join a button's border, or compression can break its top
+        // line. Match all three vertical edges and both horizontal edges together
+        // rather than requiring one uninterrupted scanline.
+        for(int top=(int)(h*.68);top<h*.78;top++)for(int mid=(int)(w*.20);mid<w*.30;mid++) {
+            if(!grey(p[top*w+mid]))continue;
+            for(int half=(int)(w*.10);half<w*.14;half+=2)for(int bottom=top+(int)(h*.16);bottom<Math.min(h*.95,top+h*.22);bottom+=2) {
+                int left=mid-half,right=mid+half;
+                int edgeHeight=bottom-top,divider=0,outer=0,horizontal=0;
+                for(int y=top+3;y<bottom-3;y++) {
+                    if(grey(p[y*w+mid])||grey(p[y*w+mid+1]))divider++;
+                    if(grey(p[y*w+left])||grey(p[y*w+left+1]))outer++;
+                    if(grey(p[y*w+right])||grey(p[y*w+right-1]))outer++;
+                }
+                if(divider<edgeHeight*.67||outer<edgeHeight*1.15)continue;
+                for(int x=left+4;x<right-4;x++){if(grey(p[top*w+x]))horizontal++;if(grey(p[bottom*w+x]))horizontal++;}
+                if(horizontal<(right-left-8)*1.35)continue;
+                result.leftX=(left+mid)/(2.*w);result.rightX=(mid+right)/(2.*w);
+                result.leftY=result.rightY=(top+bottom)/(2.*h);result.controlsDetected=true;return;
+            }
         }
     }
 
@@ -169,6 +201,10 @@ public final class PixelVision {
         if (best >= .22) {
             result.playerX=bx/(double)w; result.playerY=by/(double)h;
             result.playerConfidence=Math.min(1,best/.5);
+            result.playerLeft=Math.max(0,(bx-rx)/(double)w);
+            result.playerRight=Math.min(1,(bx+rx+1)/(double)w);
+            result.playerTop=Math.max(0,(by-ry*.70)/h);
+            result.playerBottom=Math.min(1,(by+ry*1.05)/h);
         }
     }
 
@@ -194,7 +230,7 @@ public final class PixelVision {
     private static void locateTerrainContacts(int[] p, int w, int h, Result result) {
         if (result.playerConfidence < .50) return;
         int cx=(int)(result.playerX*w), cy=(int)(result.playerY*h);
-        int radius=Math.max(4,(int)(h*.09));
+        int radius=Math.max(4,(int)(h*.075));
         int minX=w,maxX=-1,minY=h,maxY=-1,count=0;
         for(int y=Math.max(0,cy-radius);y<Math.min(h,cy+radius+1);y++) {
             for(int x=Math.max(0,cx-radius);x<Math.min(w,cx+radius+1);x++) {
@@ -206,11 +242,63 @@ public final class PixelVision {
         // Restrict the search to the crawler-sized region around its blue eyes.
         // Do not infer contact from the much larger Ember aura.
         if(count<h*h*.0015 || maxX-minX<h*.06 || maxY-minY<h*.06)return;
+        result.playerLeft=minX/(double)w;result.playerRight=(maxX+1.)/w;
+        result.playerTop=minY/(double)h;result.playerBottom=(maxY+1.)/h;
         int gap=Math.max(2,(int)(h*.018));
         // The crawler has two feet separated by an empty centre. Narrow centre-only
         // checks miss landings on the level's split/slotted platform tiles.
         result.grounded=horizontalTerrain(p,w,h,minX+1,maxX-1,maxY+1,maxY+gap+1,false);
         result.ceilingReached=horizontalTerrain(p,w,h,minX+1,maxX-1,minY-gap,minY,true);
+        result.wallLeft=verticalTerrain(p,w,h,minX-gap,minX,minY+2,maxY-2);
+        result.wallRight=verticalTerrain(p,w,h,maxX+1,maxX+gap+1,minY+2,maxY-2);
+    }
+
+    private static boolean verticalTerrain(int[] p,int w,int h,int left,int right,int top,int bottom) {
+        top=Math.max(1,top);bottom=Math.min(h-1,bottom);
+        if(bottom-top<5)return false;
+        int adjacent=0;
+        for(int x=Math.max(1,left);x<Math.min(w-1,right);x++) {
+            int count=0;for(int y=top;y<bottom;y++)if(terrainGrey(p[y*w+x]))count++;
+            if(count>(bottom-top)*.58){if(++adjacent>=2)return true;}else adjacent=0;
+        }
+        return false;
+    }
+
+    private static boolean terrainGrey(int c) {
+        int r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+        return r>36&&r<150&&g>35&&g<160&&b>39&&b<180&&Math.abs(r-g)<18&&b-g<35&&g-b<16;
+    }
+
+    private static boolean masked(double x,double y,Result result) {
+        return y<.14||y>.87||(x<.40&&y>.69)||
+            (result.playerConfidence>.35&&x>result.playerLeft-.014&&x<result.playerRight+.014&&
+                y>result.playerTop-.018&&y<result.playerBottom+.018);
+    }
+
+    private static void locateTerrain(int[] p,int w,int h,Result result) {
+        for(int gy=0;gy<result.terrainRows;gy++)for(int gx=0;gx<result.terrainCols;gx++) {
+            double nx=(gx+.5)/result.terrainCols,ny=(gy+.5)/result.terrainRows;
+            if(masked(nx,ny,result))continue;
+            int x0=gx*w/result.terrainCols,x1=(gx+1)*w/result.terrainCols;
+            int y0=gy*h/result.terrainRows,y1=(gy+1)*h/result.terrainRows;
+            int solid=0,neutral=0,bright=0,total=0,straightRow=0,straightColumn=0;
+            for(int y=y0;y<y1;y++) {
+                int row=0;
+                for(int x=x0;x<x1;x++) {
+                    int c=p[y*w+x],r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+                    total++;if(terrainGrey(c)){solid++;row++;}
+                    if(Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<28)neutral++;
+                    if(Math.max(r,Math.max(g,b))>85)bright++;
+                }
+                if(row>=(x1-x0)*.7)straightRow++;
+            }
+            for(int x=x0;x<x1;x++){int column=0;for(int y=y0;y<y1;y++)if(terrainGrey(p[y*w+x]))column++;if(column>=(y1-y0)*.7)straightColumn++;}
+            // Foreground rock has broad grey texture or a straight visible rim. Its
+            // black interior is not filled in from brightness; the planner also
+            // learns confirmed collisions and keeps observations across views.
+            if(solid>total*.30||straightRow>=2||straightColumn>=2)result.terrainCells[gy*result.terrainCols+gx]=2;
+            else if(solid<total*.045&&neutral>total*.72&&bright<total*.06)result.terrainCells[gy*result.terrainCols+gx]=1;
+        }
     }
 
     private static boolean horizontalTerrain(int[] p,int w,int h,int left,int right,int top,int bottom,boolean ceiling) {
@@ -266,7 +354,9 @@ public final class PixelVision {
 
     private static boolean componentColour(int c,int kind) {
         if(kind==0)return enemyPink(c);
+        if(kind==3)return redCore(c);
         int r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+        if(kind==4)return r>30&&g>45&&b>60&&b<215&&g<200&&b-r>23&&g>r*.95&&b>g*1.035;
         if(kind==1)return g>145 && r<g*.8 && b<g*.32;
         return r>125 && b>125 && g<90 && r>g*1.8 && b>g*1.8;
     }
@@ -312,7 +402,62 @@ public final class PixelVision {
             // establish Dreadnought identity. Leave these confidences unknown (zero).
             enemies.add(new double[]{box[0]/(double)w,box[1]/(double)h,box[2]/(double)w,box[3]/(double)h,0,0});
         }
+        // Ground bots can have a blue/grey body and a red core, without any pink
+        // limbs. Find the compact core first, then require armour around it. A red
+        // gate, a thin laser, and loose Ember sparks do not meet this geometry.
+        for(int[] core:components(p,w,h,3,(int)(w*.025),(int)(h*.15),(int)(w*.975),(int)(h*.87))) {
+            int cw=core[2]-core[0],ch=core[3]-core[1];
+            if(cw<h*.016||ch<h*.016||cw>h*.09||ch>h*.09||cw>ch*2.8||ch>cw*2.8||core[4]<h*h*.00030)continue;
+            int cx=(core[0]+core[2])/2,cy=(core[1]+core[3])/2,margin=Math.max(4,(int)(h*.048));
+            int left=Math.max(0,cx-margin),right=Math.min(w,cx+margin+1);
+            int top=Math.max((int)(h*.14),cy-margin),bottom=Math.min((int)(h*.87),cy+margin+1);
+            int armour=0,minX=right,maxX=left,minY=bottom,maxY=top;
+            for(int y=top;y<bottom;y++)for(int x=left;x<right;x++) {
+                int c=p[y*w+x],r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+                if(r>35&&g>48&&b>65&&b>r*1.12&&g>r*.92&&r<170&&g<195&&b<225) {
+                    armour++;minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+                }
+            }
+            if(armour<Math.max(core[4]*1.5,h*h*.00075)||maxX-minX<h*.045||maxY-minY<h*.045)continue;
+            double nx=cx/(double)w,ny=cy/(double)h;
+            if(masked(nx,ny,result))continue;
+            boolean duplicate=false;for(double[] e:enemies)if(nx>e[0]-.025&&nx<e[2]+.025&&ny>e[1]-.035&&ny<e[3]+.035){duplicate=true;break;}
+            if(!duplicate)enemies.add(new double[]{Math.min(minX,core[0])/(double)w,Math.min(minY,core[1])/(double)h,
+                (Math.max(maxX,core[2])+1.)/w,(Math.max(maxY,core[3])+1.)/h,0,0});
+        }
+        // Wide cyan crawler armour can obscure its red core during an attack.
+        // Restrict these candidates to compact, wide bodies supported by a floor;
+        // a round allied orb/drop or a long blue shot cannot satisfy this shape.
+        List<int[]> cyan=components(p,w,h,4,(int)(w*.025),(int)(h*.18),(int)(w*.975),(int)(h*.86));
+        for(int i=0;i<cyan.size();i++)for(int j=i+1;j<cyan.size();j++) {
+            int[] a=cyan.get(i),b=cyan.get(j);
+            int gapX=Math.max(0,Math.max(a[0],b[0])-Math.min(a[2],b[2]));
+            int gapY=Math.max(0,Math.max(a[1],b[1])-Math.min(a[3],b[3]));
+            if(gapX<h*.027&&gapY<h*.025&&Math.max(a[2],b[2])-Math.min(a[0],b[0])<h*.22&&Math.max(a[3],b[3])-Math.min(a[1],b[1])<h*.15) {
+                a[0]=Math.min(a[0],b[0]);a[1]=Math.min(a[1],b[1]);a[2]=Math.max(a[2],b[2]);a[3]=Math.max(a[3],b[3]);a[4]+=b[4];cyan.remove(j--);
+            }
+        }
+        for(int[] body:cyan) {
+            int bw=body[2]-body[0],bh=body[3]-body[1];
+            if(bw<h*.055||bh<h*.024||bw>h*.23||bh>h*.15||bw<bh*1.35||bw>bh*4.0||body[4]<bw*bh*.16)continue;
+            double nx=(body[0]+body[2])/(2.*w),ny=(body[1]+body[3])/(2.*h);
+            if(masked(nx,ny,result)||!darkFloorSupport(p,w,h,body[0],body[2],body[3],body[3]+(int)(h*.065)))continue;
+            boolean duplicate=false;for(double[] e:enemies)if(nx>e[0]-.025&&nx<e[2]+.025&&ny>e[1]-.035&&ny<e[3]+.035){duplicate=true;break;}
+            if(!duplicate)enemies.add(new double[]{body[0]/(double)w,body[1]/(double)h,body[2]/(double)w,body[3]/(double)h,0,0});
+        }
         result.enemyBoxes=enemies.toArray(new double[0][]);
+    }
+
+    private static boolean darkFloorSupport(int[] p,int w,int h,int left,int right,int top,int bottom) {
+        int adjacent=0;
+        for(int y=Math.max(1,top);y<Math.min(h-1,bottom);y++) {
+            int count=0;for(int x=Math.max(0,left);x<Math.min(w,right);x++) {
+                int c=p[y*w+x],r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+                if(r>24&&g>24&&b>28&&r<160&&Math.abs(r-g)<22&&Math.abs(g-b)<30)count++;
+            }
+            if(count>(right-left)*.65){if(++adjacent>=2)return true;}else adjacent=0;
+        }
+        return false;
     }
 
     private static boolean white(int c) {

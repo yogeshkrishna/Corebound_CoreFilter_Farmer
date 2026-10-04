@@ -7,7 +7,7 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /** Screen-driven farming policy. All coordinates are normalized to the captured display.
- * This is a bounded navigation heuristic, not a map solver or a guaranteed Spectrum detector.
+ * Gameplay is delegated to a persistent, camera-registered terrain and target planner.
  * The caller must supply a new screenshot timestamp and dispatch only the returned action.
  */
 public final class FarmEngine {
@@ -33,9 +33,15 @@ public final class FarmEngine {
         public boolean observedAd, endScreen, crateScreen, targetSelected, uncertainFilterOffer;
         public boolean grounded, ceilingReached, playButton, selectedPanel;
         public double playerConfidence, playX = -1, playY = -1;
+        public int terrainCols, terrainRows, registrationEpoch, completedSector;
+        /** Row-major occupancy: 0 = unobserved/occluded, 1 = free, 2 = solid. */
+        public byte[] terrainCells = new byte[0];
+        public double cameraDx, cameraDy, cameraX = Double.NaN, cameraY = Double.NaN, cameraConfidence;
+        public boolean registrationReset, sceneChanged, wallLeft, wallRight;
+        public double playerLeft = -1, playerTop = -1, playerRight = -1, playerBottom = -1;
         /** Candidate boxes [left, top, right, bottom, burning, dreadnought confidence]. */
         public double[][] enemyBoxes = new double[0][];
-        public double healthFraction = -1, playerX = -1, playerY = -1, gateX = -1, sceneSignature = Double.NaN;
+        public double healthFraction = -1, playerX = -1, playerY = -1, gateX = -1, gateY = -1, sceneSignature = Double.NaN;
         public Frame() { }
         public Frame(long now, String packageName, String text, List<Token> tokens) {
             this.now = now; this.capturedAt = now; this.packageName = packageName;
@@ -48,7 +54,7 @@ public final class FarmEngine {
         public String gamePackage = "com.Overcurve.Corebound";
         public long moveMs = 420, riseMs = 70, jumpTapMs = 70, settleMs = 180;
         public int jumpBudget = 7;
-        public long jumpSpacingMs = 190;
+        public long jumpSpacingMs = 500;
         public long ceilingEveryMs = 3500, jumpIntervalMs = 850, ceilingScanMs = 2200;
         public long maxRunSeconds = 180, maxSessionMinutes = 30, maxRuns = 100;
         public long staleFrameMs = 1500, unknownTimeoutMs = 15000, stuckTimeoutMs = 12000;
@@ -80,23 +86,46 @@ public final class FarmEngine {
 
     private static final Pattern COUNTDOWN = Pattern.compile("(?:skip|close|reward|continue|ad ends?|remaining).{0,20}\\b\\d{1,3}\\s*(?:s|sec|seconds)?\\b|\\b\\d{1,3}\\s*(?:s|sec|seconds)\\b");
     private final Config config;
+    private final MapNavigator navigator;
     private State state = State.IDLE;
     private String status = "Ready";
     private long sessionStart = -1, runStart = -1, lastCapture = -1, lastNow = -1;
     private long busyUntil, unknownSince = -1, gateSince = -1, adSince = -1;
-    private long lastJump = -100000, lastCeiling = -100000, scanUntil, lastProgress = -1;
-    private long completedRuns, deaths, adsWatched;
-    private double lastScene = Double.NaN, lastPlayerX = -1, lastPlayerY = -1;
-    private int recoveries, recoveryStep, direction=1, storeBacks, animationTaps;
-    private boolean inRun, resultCounted, rewardRequested, observedAd, stopAfterResult;
-    private boolean verifiedSelection, sawAirborne, ceilingSweep, climbing;
-    private int jumpsUsed, gateDirection = 1;
-    private int groundedFrames, airborneFrames, ceilingFrames;
-    private long lastGateSeen = -1;
-    private long targetContactSince = -1, targetSeenAt = -1, targetTouchedAt = -1;
-    private double targetX = -1, targetY = -1, touchedX = -1, touchedY = -1;
 
-    public FarmEngine(Config config) { this.config = config == null ? new Config() : config; }
+    private long completedRuns, deaths, adsWatched;
+
+    private int storeBacks, animationTaps;
+    private boolean inRun, resultCounted, rewardRequested, observedAd, stopAfterResult;
+    private boolean verifiedSelection;
+
+
+    private int navigationRoom;
+    private int lastCompletedSector;
+    private long lastGateSeen = -1;
+
+
+
+    public FarmEngine(Config config) {
+        this.config = config == null ? new Config() : config;
+        this.navigator = new MapNavigator(this.config);
+    }
+    public synchronized MapNavigator.Snapshot navigationSnapshot() { return navigator.snapshot(); }
+    /** Read-only planning preview: no menu taps, hypothetical jumps or emitted action cooldowns. */
+    public synchronized Action observe(Frame f) {
+        if (f == null || !f.captureOk || !config.gamePackage.equals(f.packageName)) {
+            status = "Observe: waiting for a readable Corebound screen";
+            return Action.waitFor(status);
+        }
+        if (!f.gameplay) {
+            status = "Observe: waiting for gameplay";
+            return Action.waitFor(status);
+        }
+        if (!inRun) startRun(f.now);
+        state = State.GAMEPLAY;
+        MapNavigator.Decision d = navigator.observe(f);
+        status = "Observe: " + d.reason;
+        return Action.waitFor(status);
+    }
     public synchronized State state() { return state; }
     public synchronized String status() { return status; }
     public synchronized int runs() { return (int) Math.min(Integer.MAX_VALUE, completedRuns); }
@@ -108,9 +137,9 @@ public final class FarmEngine {
     public synchronized void reset(long now) {
         state = State.IDLE; status = "Ready"; sessionStart = now; runStart = -1;
         lastCapture = -1; lastNow = -1; busyUntil = 0; unknownSince = gateSince = adSince = -1;
-        lastJump = lastCeiling = -100000; scanUntil = 0; lastProgress = -1;
-        completedRuns = deaths = adsWatched = 0; recoveries = recoveryStep = 0; direction=1;storeBacks=animationTaps=0;
-        lastScene = Double.NaN; lastPlayerX = lastPlayerY = -1;
+
+        completedRuns = deaths = adsWatched = 0; storeBacks=animationTaps=0;
+
         inRun = resultCounted = rewardRequested = observedAd = stopAfterResult = false;
         verifiedSelection = false; resetNavigation();
     }
@@ -178,8 +207,10 @@ public final class FarmEngine {
             }
             return waiting(f.now, "Target selected; waiting for Play button");
         }
-        if ((rightButton(f, "play", "start", "enter", "deploy") != null || f.playButton) && !f.gameplay)
+        if ((rightButton(f, "play", "start", "enter", "deploy") != null || f.playButton) && !f.gameplay) {
+            if (unreadableTargetTier(f)) return waiting(f.now, "Lost Scrapyard Frozen panel found; reading the selected star tier");
             return pause("Select Lost Scrapyard with Frozen five-star boost before starting");
+        }
         return waiting(f.now, "Screen not recognized; waiting without tapping");
     }
 
@@ -188,127 +219,24 @@ public final class FarmEngine {
             return pause("Run time limit reached; inspect the current room");
         if (f.healthFraction >= 0 && f.healthFraction <= 0.01)
             return pause("Health is empty; inspect the death screen before resuming");
-        long movement = clamp(config.moveMs, 120, 700);
-        updateJumpEvidence(f);
-        boolean changed = false;
-        if (Double.isFinite(f.sceneSignature)) {
-            changed = !Double.isFinite(lastScene) || Math.abs(f.sceneSignature - lastScene) > 0.008;
-            lastScene = f.sceneSignature;
-        } else if (f.playerX >= 0 && f.playerY >= 0) {
-            changed = lastPlayerX < 0 || Math.abs(f.playerX - lastPlayerX) + Math.abs(f.playerY - lastPlayerY) > 0.012;
+        MapNavigator.Decision d = navigator.next(f);
+        if (navigator.room() != navigationRoom) { navigationRoom = navigator.room(); gateSince = -1; }
+        if (f.completedSector > lastCompletedSector) {
+            lastCompletedSector = f.completedSector; gateSince = -1; lastGateSeen = -1;
         }
-        lastPlayerX = f.playerX; lastPlayerY = f.playerY;
-        if (changed || lastProgress < 0) lastProgress = f.now;
         if (f.gate) {
-            lastGateSeen = f.now;
-            if (gateSince < 0) {
-                gateSince = f.now;
-                gateDirection = f.gateX >= 0 && f.playerX >= 0 && Math.abs(f.gateX - f.playerX) > .08
-                        ? (f.gateX > f.playerX ? 1 : -1) : direction;
-                direction = gateDirection;
-            }
+            if (gateSince < 0 && !navigator.sectorCleared()) gateSince = f.now;
+        } else if (lastGateSeen >= 0 && f.now-lastGateSeen>5000) {
+            gateSince = -1;
         }
-        // Keep a short search memory when the gate scrolls off-screen during backtracking.
-        if (gateSince >= 0 && f.now - lastGateSeen > 5000) { gateSince = -1; direction = gateDirection; }
-        if (gateSince >= 0 && f.now - gateSince > clamp(config.gateTimeoutMs, 3000, 120000))
-            return pause("Gate still visible after the search; inspect remaining enemies");
-
-        double[] enemy = chooseEnemy(f);
-        if (enemy != null && f.playerConfidence >= .30 && f.playerX >= 0 && f.playerY >= 0) {
-            double ex = (enemy[0] + enemy[2]) / 2, ey = (enemy[1] + enemy[3]) / 2;
-            targetX = ex; targetY = ey; targetSeenAt = f.now;
-            int toward = Math.abs(ex - f.playerX) < .018 ? direction : (ex > f.playerX ? 1 : -1);
-            boolean above = ey < f.playerY - .06;
-            boolean overlap = enemy[0] <= f.playerX + .025 && enemy[2] >= f.playerX - .025
-                    && enemy[1] <= f.playerY + .05 && enemy[3] >= f.playerY - .05;
-            if (overlap) {
-                // A short pass through the body ignites Ember targets; no stationary kill wait.
-                targetTouchedAt = f.now; touchedX = ex; touchedY = ey; targetSeenAt = -1;
-                long contact = clamp(config.settleMs, 80, 350);
-                if (enemy.length > 5 && enemy[5] >= .6) contact = Math.max(260, contact);
-                return move(toward, jumpBatch(f, above, contact), contact, f.now,
-                        "Pass through the enemy, then keep moving while Ember burns");
-            }
-            long pursuit = Math.min(movement, Math.max(140, (long) (Math.abs(ex - f.playerX) * 1600)));
-            return move(toward, jumpBatch(f, above || climbing, pursuit), pursuit, f.now,
-                    above ? "Chain jumps toward the overhead enemy" : "Return to the visible missed enemy");
-        }
-        if (targetSeenAt >= 0 && f.now - targetSeenAt < 900 && f.playerX >= 0) {
-            int toward = targetX > f.playerX ? 1 : -1;
-            return move(toward, jumpBatch(f, targetY < f.playerY - .06 || climbing, movement), movement, f.now,
-                    "Check the last-seen enemy position before moving on");
-        }
-
-        boolean haveProgressSignal = Double.isFinite(f.sceneSignature) || (f.playerX >= 0 && f.playerY >= 0);
-        if (haveProgressSignal && f.now - lastProgress > clamp(config.stuckTimeoutMs, 3000, 60000)) {
-            if (recoveries >= Math.max(0, config.maxRecoveries)) return pause("Stuck recovery limit reached; inspect the route");
-            recoveries++; recoveryStep = 1; lastProgress = f.now; direction = -direction;
-            return move(direction, jumpBatch(f, true, movement), movement, f.now, "Stuck recovery: reverse and try a fresh ascent");
-        }
-        if (recoveryStep == 1) {
-            recoveryStep = 0;
-            return move(direction, jumpBatch(f, true, movement), movement, f.now, "Continue the alternate route and re-check the room");
-        }
-
-        if (gateSince >= 0) {
-            // Alternating expanding passes revisit the gate after burn time without waiting idle.
-            long elapsed = f.now - gateSince;
-            long period = elapsed < 6000 ? 3000 : 4800;
-            int searchDirection = elapsed % period < period * .55 ? -gateDirection : gateDirection;
-            return move(searchDirection, jumpBatch(f, true, movement), movement, f.now,
-                    searchDirection == gateDirection ? "Re-check the gate after the Ember pass" : "Backtrack and scan above for missed enemies");
-        }
-        boolean scan = climbing || f.now - lastCeiling >= clamp(config.ceilingEveryMs, 500, 30000);
-        int jumps = jumpBatch(f, scan, movement);
-        return move(direction, jumps, movement, f.now, jumps > 0 ? "Chain Hookshot jumps to inspect the ceiling"
-                : ceilingSweep ? "Sweep under the ceiling, then land to recharge jumps" : "Advance and re-check the room on the next frame");
+        if (f.gate) lastGateSeen = f.now;
+        if (gateSince >= 0 && f.now-gateSince > clamp(config.gateTimeoutMs,3000,120000))
+            return pause("Gate search time limit reached; inspect unresolved targets");
+        if (d.pause) return pause(d.reason);
+        if (d.direction == 0 && d.jumps == 0) return waiting(f.now, d.reason);
+        unknownSince = -1;
+        return move(d.direction, d.jumps, d.durationMs, f.now, d.reason);
     }
-
-    private void updateJumpEvidence(Frame f) {
-        if (f.playerConfidence < .30 || f.playerX < 0 || f.playerY < 0) return;
-        if (f.grounded) {
-            groundedFrames++; airborneFrames = 0;
-            // Two visible ground observations after visible airtime, never a wall-clock reset.
-            if (groundedFrames >= 2 && sawAirborne) {
-                jumpsUsed = 0; sawAirborne = false; ceilingSweep = false; climbing = false;
-                ceilingFrames = 0;
-            }
-        } else {
-            groundedFrames = 0; airborneFrames++;
-            if (airborneFrames >= 2 && jumpsUsed > 0) sawAirborne = true;
-        }
-        ceilingFrames = f.ceilingReached ? ceilingFrames + 1 : 0;
-        if (ceilingFrames >= 2) { ceilingSweep = true; climbing = false; }
-    }
-
-    private int jumpBatch(Frame f, boolean requested, long duration) {
-        int budget = (int) clamp(config.jumpBudget, 1, 21);
-        if (!requested || ceilingSweep || jumpsUsed >= budget) return 0;
-        long spacing = clamp(config.jumpSpacingMs, 100, 450), tap = clamp(config.jumpTapMs, 30, 120);
-        int count = (int) Math.min(3, Math.max(1, (duration - tap) / spacing + 1));
-        count = Math.min(count, budget - jumpsUsed);
-        if (!climbing) { climbing = true; lastCeiling = f.now; }
-        jumpsUsed += count; lastJump = f.now + (count - 1) * spacing;
-        return count;
-    }
-
-    private double[] chooseEnemy(Frame f) {
-        double[] best = null; double score = Double.NEGATIVE_INFINITY;
-        if (f.enemyBoxes == null) return null;
-        for (double[] box : f.enemyBoxes) {
-            if (box == null || box.length < 4 || box[0] < 0 || box[1] < 0 || box[2] > 1 || box[3] > 1
-                    || box[0] >= box[2] || box[1] >= box[3]) continue;
-            if (box.length > 4 && box[4] >= .55) continue;
-            double x = (box[0] + box[2]) / 2, y = (box[1] + box[3]) / 2;
-            if (!Double.isFinite(x) || !Double.isFinite(y)) continue;
-            if (targetTouchedAt >= 0 && f.now - targetTouchedAt < 1400
-                    && Math.abs(x - touchedX) < .08 && Math.abs(y - touchedY) < .10) continue;
-            double priority = (y < f.playerY - .1 ? .35 : 0) - Math.abs(x - f.playerX) - .45 * Math.abs(y - f.playerY);
-            if (priority > score) { score = priority; best = box; }
-        }
-        return best;
-    }
-
     private Action handleEnd(Frame f, String text, boolean death, boolean crate) {
         if (state != State.END_SCREEN) unknownSince = -1;
         state = State.END_SCREEN; gateSince = -1;
@@ -406,6 +334,15 @@ public final class FarmEngine {
         return verifiedSelection && name && frozen && f.selectedPanel && f.playButton;
     }
 
+    private boolean unreadableTargetTier(Frame f) {
+        if (!f.selectedPanel || !f.playButton) return false;
+        StringBuilder panel = new StringBuilder();
+        for (Token t : tokens(f)) if (t.x() >= .48 && t.top >= .52) panel.append(' ').append(t.text);
+        String text = normalized(panel.toString()).replace(" ", "");
+        return text.contains("lostscrapyard") && text.contains("frozen")
+                && !Pattern.compile("[0-9]").matcher(text).find();
+    }
+
     private boolean completeTitle(Frame f) {
         for (Token t : tokens(f)) if (t.y() < .25 && normalized(t.text).matches("complete!?")) return true;
         return false;
@@ -415,16 +352,19 @@ public final class FarmEngine {
     private boolean limitReached() { return !config.continuousFarm && completedRuns >= clamp(config.maxRuns, 1, 100000); }
     private void startRun(long now) {
         inRun = true; resultCounted = false; rewardRequested = false; stopAfterResult = false;
-        direction=1;animationTaps=0;
-        runStart = now; lastProgress = now; lastCeiling = now - clamp(config.ceilingEveryMs, 500, 30000);
-        gateSince = -1; recoveries = recoveryStep = 0; lastScene = Double.NaN; lastPlayerX = lastPlayerY = -1;
+        animationTaps=0;
+        runStart = now;
+        gateSince = -1;
         resetNavigation();
     }
     private void resetNavigation() {
-        jumpsUsed = 0; groundedFrames = airborneFrames = ceilingFrames = 0;
-        sawAirborne = ceilingSweep = climbing = false; lastGateSeen = -1;
-        targetSeenAt = targetTouchedAt = targetContactSince = -1;
-        targetX = targetY = touchedX = touchedY = -1;
+        navigator.reset();
+        navigationRoom = 0;
+        lastCompletedSector = 0;
+
+        lastGateSeen = -1;
+
+
     }
     private Action waiting(long now, String reason) {
         if (unknownSince < 0) unknownSince = now;
@@ -433,10 +373,10 @@ public final class FarmEngine {
     }
     private Action pause(String reason) { state = State.PAUSED; status = reason; return new Action(Kind.PAUSE, 0, 0, 0, false, 0, reason); }
     private Action move(int direction, int jumps, long duration, long now, String reason) {
-        long spacing = clamp(config.jumpSpacingMs, 100, 450);
+        long spacing = clamp(config.jumpSpacingMs, 450, 1200);
         long actualDuration = Math.min(700, Math.max(duration, jumps > 0
                 ? (jumps - 1) * spacing + clamp(config.jumpTapMs, 30, 120) : 0));
-        return emit(new Action(Kind.MOVE, 0, 0, direction, jumps, spacing, actualDuration, reason), now, actualDuration + 25);
+        return emit(new Action(Kind.MOVE, 0, 0, direction, jumps, spacing, actualDuration, reason), now, actualDuration);
     }
     private Action tap(Token t, long now, String reason, long cooldown) {
         if (!Double.isFinite(t.x()) || !Double.isFinite(t.y()) || t.x() < 0 || t.x() > 1 || t.y() < 0 || t.y() > 1)

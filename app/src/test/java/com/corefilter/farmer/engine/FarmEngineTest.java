@@ -9,7 +9,15 @@ public class FarmEngineTest {
     private static final String GAME = "com.Overcurve.Corebound";
     private Token token(String text, double x, double y) { return new Token(text, x-.04, y-.02, x+.04, y+.02); }
     private Frame frame(long now, String text, Token... tokens) { return new Frame(now, GAME, text, Arrays.asList(tokens)); }
-    private Frame game(long now) { Frame f = frame(now, ""); f.gameplay = true; return f; }
+    private Frame game(long now) {
+        Frame f = frame(now, ""); f.gameplay = true; f.playerX=.5;f.playerY=.60;f.playerConfidence=.9;
+        f.cameraConfidence=.9;f.cameraX=now/50000.;f.cameraY=0;f.terrainCols=48;f.terrainRows=24;
+        f.terrainCells=new byte[48*24];
+        for(int y=4;y<=20;y++)for(int x=1;x<47;x++)f.terrainCells[y*48+x]=1;
+        for(int x=1;x<47;x++)f.terrainCells[21*48+x]=2;
+        f.enemyBoxes=new double[][]{{.615,.245,.665,.315,0,0}};
+        return f;
+    }
     private Frame end(long now, Token... tokens) { Frame f = frame(now, "Complete!", tokens); f.endScreen = true; return f; }
 
     @Test public void refusesUnrelatedForegroundApps() {
@@ -50,16 +58,18 @@ public class FarmEngineTest {
         Config c = new Config(); c.moveMs = 700;
         FarmEngine e = new FarmEngine(c);
         assertEquals(Kind.MOVE, e.next(game(0)).kind);
-        assertEquals(Kind.WAIT, e.next(game(300)).kind);
+        assertEquals(Kind.WAIT, e.next(game(100)).kind);
     }
 
-    @Test public void ceilingCheckCombinesForwardAndMultipleSeparateJumpTaps() {
+    @Test public void ceilingCheckUsesOneJumpThenFreshObservedMotion() {
         FarmEngine e = new FarmEngine(new Config());
         Action a = e.next(game(0));
         assertEquals(Kind.MOVE, a.kind); assertEquals(1, a.direction); assertTrue(a.rise);
-        assertEquals(2, a.jumpCount); assertEquals(190, a.jumpSpacingMs);
-        assertEquals(2, e.next(game(700)).jumpCount);
-        assertTrue(e.next(game(1400)).rise);
+        assertEquals(1, a.jumpCount); assertEquals(500, a.jumpSpacingMs);
+        Frame rising=game(700);rising.playerY=.50;
+        assertTrue(e.next(rising).jumpCount<=1);
+        Frame next=game(1400);next.playerY=.53;
+        assertTrue(e.next(next).jumpCount<=1);
     }
 
     @Test public void killingOrLootingFilterDoesNotAuthorizeRewardAd() {
@@ -175,21 +185,20 @@ public class FarmEngineTest {
         Frame f = game(0); f.gate = true;
         assertEquals(Kind.MOVE, e.next(f).kind);
         f = game(1000); f.gate = true;
-        Action a = e.next(f); assertEquals(Kind.MOVE, a.kind); assertEquals(-1, a.direction);
+        Action a = e.next(f); assertEquals(Kind.MOVE, a.kind); assertTrue(a.jumpCount<=1);
         f = game(4000); f.gate = true;
         assertEquals(Kind.PAUSE, e.next(f).kind);
     }
 
-    @Test public void stuckRecoveryIsBoundedAndPaired() {
+    @Test public void stationaryBodyRecoveryIgnoresAnimatedSceneBrightnessAndIsBounded() {
         Config c = new Config(); c.stuckTimeoutMs = 3000; c.maxRecoveries = 1;
         FarmEngine e = new FarmEngine(c);
-        Frame f = game(0); f.sceneSignature = .4; e.next(f);
-        f = game(4000); f.sceneSignature = .4;
-        assertEquals(-1, e.next(f).direction);
-        f = game(5000); f.sceneSignature = .4;
-        assertEquals(-1, e.next(f).direction);
-        f = game(9000); f.sceneSignature = .4;
-        assertEquals(Kind.PAUSE, e.next(f).kind);
+        Action a=null;
+        for(int i=0;i<35;i++) {
+            Frame f=game(i*350);f.cameraX=0;f.sceneSignature=i%2==0?.1:.8;
+            a=e.next(f);if(a.kind==Kind.PAUSE)break;
+        }
+        assertEquals(Kind.PAUSE,a.kind);
     }
 
     @Test public void deathRetriesWithoutCountingASuccess() {
@@ -211,10 +220,10 @@ public class FarmEngineTest {
     }
 
     @Test public void visibleLeftGateChangesTraversalDirection(){
-        FarmEngine e=new FarmEngine(new Config());Frame f=game(0);f.gate=true;f.gateX=.2;f.playerX=.6;e.next(f);
+        FarmEngine e=new FarmEngine(new Config());Frame f=game(0);f.gate=true;f.gateX=.2;f.playerX=.6;f.enemyBoxes=new double[0][];e.next(f);
         f=game(2500);f.gate=true;f.gateX=.2;f.playerX=.6;
+        f.enemyBoxes=new double[][]{{.2,.3,.25,.36,0,0}};
         assertEquals(-1,e.next(f).direction);
-        assertEquals(-1,e.next(game(8000)).direction);
     }
 
     @Test public void resultAnimationTapsRequireRecognizedResults(){

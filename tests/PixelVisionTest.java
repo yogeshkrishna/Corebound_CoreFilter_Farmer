@@ -66,9 +66,33 @@ public class PixelVisionTest {
         check(next.kind==FarmEngine.Kind.TAP&&Math.abs(next.x-.505)<.005,
                 "Completion without an ad uses the observed centre Continue at "+scale);
     }
+    private static void v3Checks(File root,double scale) throws Exception {
+        for(String name:new String[]{"56.00","58.00","64.00"}) {
+            PixelVision.Result wall=read(root,"v3/farmer_"+name+".png",scale);
+            check(wall.gameplay&&wall.controlsDetected&&wall.playerConfidence>.5,"Overlay-covered HUD uses movement control evidence: "+name+" / "+scale);
+            check(wall.wallRight&&!wall.wallLeft,"Actual full-height wall contact detected: "+name+" / "+scale);
+            check(wall.playerLeft<wall.playerX&&wall.playerRight>wall.playerX&&wall.playerTop<wall.playerY&&wall.playerBottom>wall.playerY,"Crawler bounds contain the observed body at "+scale);
+            int walls=0;for(int y=4;y<20;y++)for(int x=24;x<28;x++)if(wall.terrainCells[y*48+x]==2)walls++;
+            check(walls>=5,"Visible right barrier contributes solid terrain cells at "+scale);
+            check(wall.terrainCells[0]==0&&wall.terrainCells[20*48+8]==0,"HUD and movement controls remain unknown terrain at "+scale);
+        }
+        PixelVision.Result red=read(root,"v3/farmer_15.00.png",scale);
+        check(red.gameplay&&red.enemyBoxes.length>=1,"Non-pink compact red-core bot is observed at "+scale);
+        boolean redAhead=false;for(double[] box:red.enemyBoxes)redAhead|=box[0]>.74&&box[2]<.86;
+        check(redAhead,"Missed ground bot is retained to the right at "+scale);
+        PixelVision.Result cyan=read(root,"v3/farmer_168.00.png",scale);
+        boolean cyanAhead=false,orbMisread=false;
+        for(double[] box:cyan.enemyBoxes){cyanAhead|=box[0]>.83;orbMisread|=box[0]<.75;}
+        check(cyan.gameplay&&cyanAhead,"Floor-supported cyan armour candidate observed at "+scale);
+        check(!orbMisread,"Separate allied orb / drop is not labelled an enemy at "+scale);
+        PixelVision.Result before=read(root,"v3/manual_8.75.png",scale),landed=read(root,"v3/manual_9.00.png",scale),settled=read(root,"v3/manual_9.25.png",scale);
+        check(before.gameplay&&!before.grounded,"Descending frame cannot replenish Hookshot jumps at "+scale);
+        check(landed.gameplay&&landed.grounded&&settled.grounded,"Visible floor confirms landing in two independent recorded frames at "+scale);
+    }
     public static void main(String[] args) throws Exception {
         File root=new File(args.length>0?args[0]:".");
         for(double scale:new double[]{.5,1.,2.}) {
+            v3Checks(root,scale);
             fieldChecks(root,scale);
             PixelVision.Result positive=read(root,"clip2_56.5.png",scale);
             check(!positive.gameplay,"Result is not gameplay at "+scale);

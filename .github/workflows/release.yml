@@ -53,8 +53,9 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug testDebugUnitTest lintDebug --no-daemon --console=plain
           mkdir -p analysis/test-classes
-          javac -d analysis/test-classes app/src/main/java/com/corefilter/farmer/vision/PixelVision.java app/src/main/java/com/corefilter/farmer/engine/FarmEngine.java app/src/main/java/com/corefilter/farmer/engine/ScreenInterpreter.java tests/PixelVisionTest.java
+          javac -d analysis/test-classes app/src/main/java/com/corefilter/farmer/vision/*.java app/src/main/java/com/corefilter/farmer/engine/*.java tests/*.java
           java -cp analysis/test-classes PixelVisionTest .
+          java -cp analysis/test-classes NavigationReplayTest .
           mkdir -p release
           cp app/build/outputs/apk/debug/app-debug.apk release/Ceiling-Scout.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/Ceiling-Scout.apk | tee release/signature.txt
