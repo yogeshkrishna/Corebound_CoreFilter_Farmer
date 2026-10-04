@@ -67,7 +67,7 @@ public final class MainActivity extends Activity {
         Button maps=Ui.secondaryButton(this,"Saved maps & Wi-Fi transfer",this::showSavedMaps);maps.setTag("saved-maps");main.addView(maps);
         LinearLayout screenTools=Ui.card(this);Ui.title(screenTools,"Screen tools");
         screenTools.addView(Ui.secondaryButton(this,"Preview captured game",()->{if(FarmerService.instance==null){Toast.makeText(this,"Connect controls first",Toast.LENGTH_SHORT).show();return;}FarmerService.instance.requestPreview();}));
-        Switch capture=toggle(screenTools,"capture-compatibility","Compatibility capture",getSharedPreferences("capture",0).getBoolean("compatibility",false));
+        Switch capture=toggle(screenTools,"capture-compatibility","Compatibility capture",getSharedPreferences("capture",0).getBoolean("compatibility",true));
         capture.setOnCheckedChangeListener((button,checked)->{getSharedPreferences("capture",0).edit().putBoolean("compatibility",checked).apply();if(FarmerService.instance!=null)FarmerService.instance.setCompatibilityCapture(checked);});main.addView(screenTools);
 
         LinearLayout updates=Ui.card(this);Ui.title(updates,"App updates");
@@ -80,7 +80,7 @@ public final class MainActivity extends Activity {
         step(guide,"3","Start your selected mode","Run farms. Record maps while you play. Save keeps your map.");main.addView(guide);
         main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.4.5 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.4.6 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){

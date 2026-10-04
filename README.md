@@ -30,7 +30,7 @@ If updating from 0.2.0 after the repository rename, choose **Update source**, en
 - **Run/Pause:** farming continues until stopped by default. Pause prevents new touches; an already issued batch releases within 700 ms.
 - **••• → Build & Hookshots:** pauses farming and opens equipment notes, jump count, tap spacing, movement duration, contact time, run watchdog, and ad preference.
 - **Calibrate controls:** saves the movement and jump touch positions.
-- **Screen tools in the app:** preview freezes the captured game image; compatibility capture briefly hides the bar before display capture. Android 14+ normally captures the game window directly. Detected overlay contamination switches to compatibility capture.
+- **Screen tools in the app:** preview freezes the captured game image without stretching its proportions. Compatibility capture briefly hides the bar before full-display capture and is enabled automatically once in 0.4.6. Optional window capture accepts only native-size buffers and falls back to display capture on mismatched geometry. Frames captured across rotation or a foreground change are discarded before analysis.
 - **Stop & hide:** stops farming and removes the bar. Reopen it from the home screen. Drag its status text to move it.
 
 The navigator enters the corridor before selecting backward targets, jump-moves through visible areas, and uses additional height only for hidden roofs. Ceiling inspection is based on a clear view of its underside rather than proximity. Downward passages and real enclosing walls establish corridor turns; screen edges do not. Ember contact starts a burn attempt, with unresolved targets retained for a deliberate return sweep. A readable remaining-enemy count helps direct that sweep; a visible gate does not start an animation wait. See [controller details](docs/navigation.md).
@@ -53,7 +53,7 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.5.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.6.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 
