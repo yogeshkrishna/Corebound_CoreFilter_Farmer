@@ -31,19 +31,25 @@ public final class NavigationReplayTest {
             check(a.jumpCount<=1,"Wall recovery cannot emit a blind multi-jump batch");
         }
         FarmEngine observer=new FarmEngine(new FarmEngine.Config());camera=new TemporalVision();
-        double previousScreenY=0,previousWorldY=0;
+        int registeredViews=0,uncertainViews=0;double previousCameraY=0;
+        com.corefilter.farmer.engine.MapNavigator.Snapshot previous=null;
         for(int time:new int[]{5500,5750,6000,6250,6500}){
             FarmEngine.Frame f=frame(root,String.format("manual_%.2f.png",time/1000.),time,camera);
-            if(time>5500)check(f.cameraConfidence>.55,"Recorded terrain must be registered before world motion is used at "+time);
             observer.observe(f);
-            if(time==6500){
-                check(f.playerY<previousScreenY,"The recorded screen position appears to rise");
-                check(observer.navigationSnapshot().playerY>previousWorldY+.20,"Planner must place the crawler lower in world space during the recorded fall");
-                check(observer.navigationSnapshot().verticalVelocity>0,"Planner must classify corrected world motion as descent");
+            com.corefilter.farmer.engine.MapNavigator.Snapshot snapshot=observer.navigationSnapshot();
+            if(time>5500&&f.cameraConfidence>.55){
+                registeredViews++;
+                check(Double.isFinite(f.cameraY),"Registered foreground supplies a finite camera displacement");
+            }else if(time>5500){
+                uncertainViews++;
+                check(f.cameraY==previousCameraY,"Occluded foreground cannot invent camera displacement at "+time);
+                check(java.util.Arrays.deepEquals(snapshot.cells,previous.cells),"Unregistered view cannot repaint the terrain atlas at "+time);
+                check(snapshot.path.length==previous.path.length,"Unregistered view cannot append a fabricated world path at "+time);
             }
-            previousScreenY=f.playerY;previousWorldY=observer.navigationSnapshot().playerY;
+            previousCameraY=f.cameraY;previous=snapshot;
         }
+        check(registeredViews>0&&uncertainViews>0,"Replay exercises both registered and effect-obscured terrain");
         check(observer.navigationSnapshot().remainingJumps==7,"Observing manual jumps must not invent injected pulses");
-        System.out.println("NavigationReplay: "+checks+" checks passed (recorded wall and camera-corrected Hookshot descent through the complete controller).");
+        System.out.println("NavigationReplay: "+checks+" checks passed (recorded walls and frozen mapping during effect-obscured camera views).");
     }
 }

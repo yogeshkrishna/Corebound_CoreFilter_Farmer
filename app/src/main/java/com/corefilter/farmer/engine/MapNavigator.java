@@ -1,22 +1,20 @@
 package com.corefilter.farmer.engine;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
-import java.util.Set;
+import java.util.Locale;
+import java.util.TreeSet;
 
 /** A bounded, on-device room atlas. It maps geometry, not brightness or projectile motion.
  * Camera registration makes off-screen targets and inspected ceiling sections persist.
  * This is partial observation: a contact is only a burn attempt, never a confirmed kill.
  */
 public final class MapNavigator {
-    private static final int COLS = 48, ROWS = 24, MAX_CELLS = 16000, MAX_ROUTE = 3500;
+    private static final int COLS = 48, ROWS = 24, MAX_CELLS = 20000, MAX_PATH = 6000;
+    private static final double SECTION_GAP = 1000;
     private static final double CAMERA_MIN = .55, PLAYER_MIN = .38;
     private static final long BURN_GRACE_MS = 1800;
 
@@ -35,61 +33,79 @@ public final class MapNavigator {
         public final int room, mapCells, unresolvedEnemies, remainingJumps, inspectedCeilings, ceilingSections;
         public final double cameraX, cameraY, playerX, playerY, goalX, goalY;
         public final double learnedJumpRise, verticalVelocity;
+        public final double cameraConfidence, viewportAspectRatio;
+        public final int terrainCols=COLS,terrainRows=ROWS,corridorDirection;
+        public final boolean complete,runEnded,runSucceeded;
+        public final String phase;
         public final String goal, reason;
         public final long blockedForMs;
         /** [world x, world y, occupancy, visited] and [enemy x, enemy y, burn attempt, last seen]. */
         public final double[][] cells, enemies;
+        public final double[][] borders,path,coverage,enemyHistory;
         private Snapshot(MapNavigator n) {
             room = n.room; mapCells = n.tiles.size(); unresolvedEnemies = n.tracks.size();
             remainingJumps = Math.max(0, n.jumpBudget() - n.usedJumps);
-            cameraX = n.cameraX; cameraY = n.cameraY; playerX = n.px; playerY = n.py;
+            cameraX = n.cameraX-n.room*SECTION_GAP; cameraY = n.cameraY; playerX = n.px-n.room*SECTION_GAP; playerY = n.py;
+            cameraConfidence=n.registered?n.frame.cameraConfidence:0;
+            viewportAspectRatio=n.frame==null?Double.NaN:n.frame.viewportAspectRatio;
+            corridorDirection=n.corridorDirection;phase=n.phase;runEnded=n.runEnded;runSucceeded=n.runSucceeded;
+            complete=n.completeEvidence();
             learnedJumpRise=n.jumpRise;verticalVelocity=n.velocityY;
-            goalX = n.goal == null ? Double.NaN : n.goal.x; goalY = n.goal == null ? Double.NaN : n.goal.y;
+            goalX = n.goal == null ? Double.NaN : n.goal.x-n.room*SECTION_GAP; goalY = n.goal == null ? Double.NaN : n.goal.y;
             goal = n.goal == null ? "observe" : n.goal.kind; reason = n.reason;
             blockedForMs = n.blockedSince < 0 || n.now < 0 ? 0 : n.now - n.blockedSince;
             int done = 0; for (Ceiling c : n.ceilings.values()) if (c.checked) done++;
             inspectedCeilings = done; ceilingSections = n.ceilings.size();
-            cells = new double[n.tiles.size()][4]; int i = 0;
+            cells = new double[n.tiles.size()][5]; int i = 0;
             for (Map.Entry<Long, Tile> e : n.tiles.entrySet()) {
-                cells[i++] = new double[]{wx(x(e.getKey())), wy(y(e.getKey())), e.getValue().solid ? 2 : 1, e.getValue().visited ? 1 : 0};
+                cells[i++] = new double[]{wx(x(e.getKey()))-e.getValue().section*SECTION_GAP, wy(y(e.getKey())), e.getValue().solid ? 2 : 1, e.getValue().visited ? 1 : 0,e.getValue().section};
             }
-            enemies = new double[n.tracks.size()][4]; i = 0;
-            for (Track t : n.tracks) enemies[i++] = new double[]{t.x, t.y, t.touchedAt < 0 ? 0 : 1, t.seenAt};
+            enemies = new double[n.tracks.size()][5]; i = 0;
+            for (Track t : n.tracks) enemies[i++] = new double[]{t.x-t.section*SECTION_GAP, t.y, t.touchedAt < 0 ? 0 : 1, t.seenAt,t.section};
+            borders=n.exportBorders();path=n.pathRows.toArray(new double[0][]);coverage=n.exportCoverage();
+            enemyHistory=n.exportEnemyHistory();
         }
     }
 
-    private static final class Tile { boolean solid, visited; int evidence; long seenAt; }
-    private static final class Ceiling { double x, y; boolean checked; long deferredUntil; Ceiling(double x, double y) { this.x=x;this.y=y; } }
+    private static final class Tile { boolean solid, visited; int evidence,section,observations; long seenAt; }
+    private static final class Ceiling { double x, y; boolean checked; int section,clearViews;long lastView=-1; Ceiling(double x, double y,int section) { this.x=x;this.y=y;this.section=section; } }
     private static final class Track {
-        int id, missingFrames, sector; double x, y, width, height, heavy;boolean ceilingCandidate;
-        long seenAt, touchedAt = -1, absentSince = -1, deferredUntil; boolean matched;
+        int id, missingFrames, sector,section,corridor; double x, y, width, height, heavy;boolean ceilingCandidate;
+        long firstSeen,seenAt, touchedAt = -1, absentSince = -1, deferredUntil,clearedAt=-1; boolean matched;
     }
     private static final class Goal {
         final double x, y; final String kind; final int track;
         Goal(double x, double y, String kind, int track) { this.x=x;this.y=y;this.kind=kind;this.track=track; }
-    }
-    private static final class Node {
-        final long cell; final double cost, rank;
-        Node(long cell, double cost, double rank) { this.cell=cell;this.cost=cost;this.rank=rank; }
     }
 
     private final FarmEngine.Config config;
     private final HashMap<Long, Tile> tiles = new HashMap<>();
     private final HashMap<Long, Ceiling> ceilings = new HashMap<>();
     private final ArrayList<Track> tracks = new ArrayList<>();
+    private final ArrayList<Track> history = new ArrayList<>();
+    private final HashSet<Long> unseenRoofColumns=new HashSet<>();
+    private final ArrayList<double[]> borderRows=new ArrayList<>(),pathRows=new ArrayList<>();
+    private int corridorDirection=1,corridor=1,returnTrack=-1,remainingEnemies=-1;
+    private double corridorFloor=Double.NaN,returnX=Double.NaN,scoutX=Double.NaN,dropX=Double.NaN;
+    private long returnAt=-1,returnDeadline=-1,dropAt=-1,releaseUntil=-1,lastTurn=-100000;
+    private boolean pendingDrop,runEnded,runSucceeded,scoutDone,highRoofPending,entered,orientationPending;
+    private double entryX=Double.NaN,velocityX,gravity=1.8,horizontalSpeed=.20;
+    private long countAt=-1;
+    private int countSector=-1;
+    private double corridorStartX=Double.NaN;
+    private long remainingSweepAt=-1;
+    private int emptySweeps;
+    private String phase="ENTER";
     private double cameraX, cameraY, biasX, biasY, px = Double.NaN, py = Double.NaN;
     private double previousX = Double.NaN, previousY = Double.NaN, velocityY;
     private long now=-1, previousAt=-1, lastJump=-100000, blockedSince=-1, lastProgress=-1, roofSince=-1;
-    private long escapeUntil=-1, gateAt=-1, uncertainSince=-1, discontinuityAt=-1, cameraGapAt=-1;
+    private long gateAt=-1, uncertainSince=-1, discontinuityAt=-1, cameraGapAt=-1;
     private int epoch=Integer.MIN_VALUE, room, nextTrack=1, usedJumps, groundedFrames, airFrames;
-    private int lastDirection=1, escapeDirection=-1, failedEscapes, routeFailures;
-    private int goalDecisions, completedSector, activeSector=1;
+    private int lastDirection=1, failedEscapes;
+    private int completedSector, activeSector=1;
     private boolean pendingAnchor, sectorCleared;
-    private double gateX=Double.NaN, gateY=Double.NaN;
-    private boolean sawAir, initialMap=true, registered, previousCommand, lastGrounded, pendingSceneChange, dispatch=true;
-    private Set<Long> reachable=Collections.emptySet();
-    private long goalProgressAt=-1;
-    private double goalDistance=Double.POSITIVE_INFINITY;
+    private double gateX=Double.NaN;
+    private boolean sawAir, registered, previousCommand, pendingSceneChange, dispatch=true;
     private double jumpRise=.16, jumpOriginY, jumpMinimumY;
     private long jumpObservedAfter=-1;
     private int learnedJumps;
@@ -100,175 +116,125 @@ public final class MapNavigator {
 
     public MapNavigator(FarmEngine.Config config) { this.config=config; }
     public void reset() {
-        tiles.clear();ceilings.clear();tracks.clear(); cameraX=cameraY=biasX=biasY=0;
+        borderRows.clear();pathRows.clear();corridorDirection=1;corridor=1;returnTrack=remainingEnemies=-1;
+        corridorFloor=returnX=scoutX=dropX=Double.NaN;returnAt=returnDeadline=dropAt=releaseUntil=-1;lastTurn=-100000;
+        pendingDrop=runEnded=runSucceeded=scoutDone=highRoofPending=entered=orientationPending=false;phase="ENTER";
+        entryX=corridorStartX=Double.NaN;velocityX=0;countAt=remainingSweepAt=-1;countSector=-1;emptySweeps=0;
+        tiles.clear();ceilings.clear();tracks.clear();history.clear();unseenRoofColumns.clear(); cameraX=cameraY=biasX=biasY=0;
         px=py=previousX=previousY=Double.NaN;velocityY=0;now=previousAt=-1;lastJump=-100000;
-        blockedSince=roofSince=escapeUntil=gateAt=uncertainSince=discontinuityAt=cameraGapAt=-1;lastProgress=-1;
+        blockedSince=roofSince=gateAt=uncertainSince=discontinuityAt=cameraGapAt=-1;lastProgress=-1;
         epoch=Integer.MIN_VALUE;room=0;nextTrack=1;usedJumps=groundedFrames=airFrames=0;
-        lastDirection=1;escapeDirection=-1;failedEscapes=routeFailures=0;sawAir=previousCommand=false;
-        gateX=gateY=Double.NaN;goal=null;registered=false;initialMap=true;
+        lastDirection=1;failedEscapes=0;sawAir=previousCommand=false;
+        gateX=Double.NaN;goal=null;registered=false;
         reason="Waiting for the player and terrain";frame=null;pendingSceneChange=false;
-        reachable=Collections.emptySet();goalProgressAt=-1;goalDistance=Double.POSITIVE_INFINITY;
-        learningJump=false;jumpObservedAfter=-1;jumpRise=.16;learnedJumps=0;
-        goalDecisions=completedSector=0;activeSector=1;pendingAnchor=sectorCleared=false;
+        learningJump=false;jumpObservedAfter=-1;
+        completedSector=0;activeSector=1;pendingAnchor=sectorCleared=false;
     }
     public Snapshot snapshot() { return new Snapshot(this); }
     public int room() { return room; }
     public boolean sectorCleared() { return sectorCleared; }
+    public void finish(boolean success) { runEnded=true;runSucceeded=success;phase="COMPLETE";previousCommand=false;if(success)resolveOrdinary(); }
     public Decision observe(FarmEngine.Frame f) { return next(f,false); }
 
     public Decision next(FarmEngine.Frame f) {
         return next(f,true);
     }
     private Decision next(FarmEngine.Frame f,boolean dispatchActions) {
-        dispatch=dispatchActions;
-        frame=f;now=f.now;
-        if (f.playerConfidence < PLAYER_MIN || !valid(f.playerX, f.playerY)) {
-            previousCommand=false;
-            if (uncertainSince < 0) uncertainSince=now;
+        dispatch=dispatchActions;frame=f;now=f.now;
+        if(runEnded)return decision(0,0,0,false,"Run finished; preserve its map for export");
+        if(f.playerConfidence<PLAYER_MIN||!valid(f.playerX,f.playerY)) {
+            previousCommand=false;if(uncertainSince<0)uncertainSince=now;
             return decision(0,0,0,now-uncertainSince>5000,"Player position uncertain; observe before moving");
         }
-        uncertainSince=-1;
-        registerCamera(f);
-        if(registered)cameraGapAt=-1;else if(cameraGapAt<0)cameraGapAt=now;
+        uncertainSince=-1;registerCamera(f);if(registered)cameraGapAt=-1;else if(cameraGapAt<0)cameraGapAt=now;
         px=f.playerX+cameraX;py=f.playerY+cameraY;
-        boolean anchorFrame=registered||(previousAt<0&&cameraX==0&&cameraY==0);
-        boolean spatial = validTerrain(f);
-        if (spatial && (initialMap || registered)) {
-            integrateTerrain(f);initialMap=false;
-        }
-        // Masked player pixels must not leave a hole at the start of a route.
-        if(anchorFrame) {
-            fillPlayerMask(f);updateMotionAndJumps(f);updateTracks(f);updateCeilingCoverage();
+        if(!Double.isFinite(entryX))entryX=corridorStartX=px;
+        if((px-entryX)*corridorDirection>=.16)entered=true;
+        boolean anchored=registered||previousAt<0&&!pendingAnchor;
+        if(anchored) {
+            if(validTerrain(f))integrateTerrain(f);
+            fillPlayerMask(f);buildBorders();updateMotionAndJumps(f);updateTracks(f);updateCeilingCoverage();recordPath();
         } else updateGroundEvidence(f);
-        if (anchorFrame && f.gate && validCoordinate(f.gateX)) {
-            if(Double.isFinite(gateX)&&Math.abs(f.gateX+cameraX-gateX)>.35)sectorCleared=false;
-            gateX=f.gateX+cameraX;gateY=validCoordinate(f.gateY)?f.gateY+cameraY:py;gateAt=now;
+        if(f.remainingEnemies>=0&&f.remainingEnemiesConfidence>=.55) {
+            remainingEnemies=f.remainingEnemies;countAt=f.capturedAt;countSector=activeSector;
+            sectorCleared=remainingEnemies==0;if(sectorCleared)resolveOrdinary();
         }
         if(f.completedSector>completedSector) {
-            completedSector=f.completedSector;activeSector=Math.max(activeSector,completedSector+1);sectorCleared=true;
-            // Sector clear is authoritative for ordinary bots; a ceiling candidate
-            // may be a non-gating Spectrum and still needs its mapped position checked.
-            for(int i=tracks.size()-1;i>=0;i--)if(tracks.get(i).sector<=completedSector&&!tracks.get(i).ceilingCandidate)tracks.remove(i);
-            goal=null;
+            completedSector=f.completedSector;resolveOrdinary();activeSector=Math.max(activeSector,completedSector+1);
+            remainingEnemies=-1;countAt=f.capturedAt;countSector=activeSector;sectorCleared=true;
         }
-        if(anchorFrame)reachable=reachableCells(nearestFree(px,py,3));
-        if (tiles.size()>MAX_CELLS) return decision(0,0,0,true,"Room atlas limit reached; inspect the room");
-
-        // Detection acts on body motion plus camera displacement; effects and HUD changes do not help.
-        boolean wall=(lastDirection>0&&f.wallRight)||(lastDirection<0&&f.wallLeft)||horizontalSolid(lastDirection);
-        if (dispatch && previousCommand && wall && blockedSince<0) blockedSince=now;
-        if (dispatch && blockedSince>=0 && now-blockedSince>=550 && escapeUntil<now) {
-            escapeDirection=-lastDirection;escapeUntil=now+650;blockedSince=-1;goal=null;failedEscapes++;
+        if(countSector!=activeSector||f.capturedAt-countAt>2000){remainingEnemies=-1;sectorCleared=false;}
+        if(anchored&&f.gate&&validCoordinate(f.gateX)){gateX=f.gateX+cameraX;gateAt=now;}
+        if(tiles.size()>MAX_CELLS)return decision(0,0,0,true,"Atlas size limit reached; preserve this partial map");
+        if(!anchored)return unregisteredPass();
+        if(entered&&phase.equals("ENTER"))phase="GROUND_SWEEP";
+        double[] support=supportFloor();
+        if(!Double.isFinite(corridorFloor)&&support!=null)corridorFloor=support[1]-bodyHalfH();
+        commitObservedDrop(support);
+        double[] opening=findOpening(corridorDirection,support);
+        double[] wall=wallAhead(corridorDirection);
+        boolean blocked=wallContact(corridorDirection)||(wall!=null&&wallGap(wall,corridorDirection)<predictionDistance());
+        highRoofPending=roofStillOutsideView();
+        if(scoutDone&&Double.isFinite(scoutX)&&Math.abs(px-scoutX)>.35)scoutDone=false;
+        if(frame.ceilingReached||roofGap()<.055) {
+            learningJump=false;if(phase.equals("SCOUT_HIGH_CEILING"))finishScout();
+            return act(blocked?0:corridorDirection,0,350,"Roof clearance: release jump and descend to the ground pass");
         }
-        if (lastProgress>=0 && now-lastProgress>Math.max(3500,config.stuckTimeoutMs)
-                && failedEscapes>Math.max(1,config.maxRecoveries))
-            return decision(0,0,0,true,"No body or camera progress after alternate routes; inspect the room");
-        if (now<escapeUntil) {
-            int escape=horizontalSolid(escapeDirection)?0:escapeDirection;
-            return remember(decision(escape,0,200,false,"Blocked passage: retreat and drop below the obstacle"));
+        if(phase.equals("DROP_TO_CORRIDOR")&&Double.isFinite(dropX))return followDrop();
+        if(phase.equals("REMAINING_ENEMY_SWEEP")){Decision sweep=remainingSweep();if(sweep!=null)return sweep;}
+        Track earlyReturning=track(returnTrack);
+        if(earlyReturning!=null){Decision revisit=returnToEnemy(earlyReturning);if(revisit!=null)return revisit;}
+        if(phase.equals("RETURN_GROUND")) {
+            if(f.grounded&&Math.abs(px-returnX)<.13){phase="GROUND_SWEEP";returnX=Double.NaN;}
+            else {int side=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
+                return act(wallContact(side)?0:side,0,350,"Return from the high-roof scout to the ground sweep; no extra jump");}
         }
-        if (f.ceilingReached || roofTooClose()) {
-            if (roofSince<0) roofSince=now;
-            // A roof contact is not a navigation target. Coasting immediately permits gravity to release it.
-            int side=horizontalSolid(lastDirection)?-lastDirection:lastDirection;
-            if (horizontalSolid(side)) side=0;
-            return remember(decision(side,0,180,false,"Ceiling clearance: stop jumping and descend into the room"));
-        }
-        roofSince=-1;
-
-        // With uncertain camera registration, only current-frame targets are usable.
-        // Keep the atlas frozen, rather than merging moving screen coordinates into it.
-        if(!anchorFrame&&Double.isFinite(f.cameraX)) {
-            if(cameraGapAt>=0&&now-cameraGapAt>8000)return decision(0,0,0,true,"Camera registration has not recovered; inspect the capture view");
-            double[] local=nearestLocalEnemy(f);
-            if(local!=null) {
-                double ex=(local[0]+local[2])/2,ey=(local[1]+local[3])/2;
-                int toward=Math.abs(ex-f.playerX)<.025?0:(ex>f.playerX?1:-1);
-                if(horizontalSolid(toward))toward=0;
-                int pulse=jumpNeeded(ey<f.playerY-.07,ey-f.playerY,f)?1:0;
-                if(pulse>0&&dispatch)recordJump(false);
-                return remember(decision(toward,pulse,180,false,"Camera registration uncertain: follow only the currently visible target"));
+        boolean atExit=blocked||opening!=null&&(opening[0]-px)*corridorDirection<.16
+                ||gateAt>=0&&now-gateAt<1500&&Double.isFinite(gateX)&&(gateX-px)*corridorDirection>=-.04&&Math.abs(gateX-px)<.20;
+        if(entered&&!phase.equals("SCOUT_HIGH_CEILING")) {
+            Track missed=missedEnemy();
+            if(missed!=null){startEnemyReturn(missed);Decision revisit=returnToEnemy(missed);if(revisit!=null)return revisit;}
+            if(atExit&&remainingEnemies>0){
+                if(emptySweeps>=2)return decision(0,0,0,true,"Enemy counter remains positive after two complete return sweeps; inspect detection");
+                remainingSweepAt=now;phase="REMAINING_ENEMY_SWEEP";Decision sweep=remainingSweep();if(sweep!=null)return sweep;
             }
-            int probe=lastDirection;
-            if(horizontalSolid(probe))probe=-probe;
-            if(f.grounded&&!horizontalSolid(probe)&&localFree(f.playerX+probe*.06,f.playerY))
-                return remember(decision(probe,0,180,false,"Camera registration uncertain: short grounded probe through visible clear space"));
-            return remember(decision(0,0,0,false,"Camera registration uncertain: preserve the atlas and reobserve"));
-        }
-
-        Goal selected=chooseGoal();
-        if (selected!=null) {
-            if(goal==null||goal.track!=selected.track||!goal.kind.equals(selected.kind)
-                    ||distance(goal.x,goal.y,selected.x,selected.y)>.08) {
-                goalProgressAt=now;goalDistance=distance(px,py,selected.x,selected.y);
-                goalDecisions=0;
+            if(atExit&&highRoofPending&&!scoutDone&&usedJumps<jumpBudget()) {
+                scoutX=px;phase="SCOUT_HIGH_CEILING";
             }
-            goal=selected;
-            goalDecisions++;
         }
-        if (goal==null) {
-            int advance=Double.isFinite(gateX)&&gateX<px?-1:1;
-            if(horizontalSolid(advance))advance=-advance;
-            // An unregistered/unknown image gets a short guarded probe, not a timed jump loop.
-            return remember(decision(horizontalSolid(advance)?0:advance,0,180,false,"Observe the next room section with a short guarded advance"));
+        if(!phase.equals("SCOUT_HIGH_CEILING")&&opening!=null&&(opening[0]-px)*corridorDirection<.16) {
+            dropX=opening[0];dropAt=now;pendingDrop=true;phase="DROP_TO_CORRIDOR";return followDrop();
         }
-        Track target=track(goal.track);
-        double distanceToGoal=distance(px,py,goal.x,goal.y);
-        if(distanceToGoal<goalDistance-.02){goalDistance=distanceToGoal;goalProgressAt=now;}
-        if(dispatch&&goalDecisions>=4&&goalProgressAt>=0&&now-goalProgressAt>2500) {
-            deferGoal(goal,now+2000);goal=null;goalProgressAt=now;
-            Goal boundary=reachableFrontier(nearestFree(px,py,3),null);
-            if(boundary!=null)goal=boundary;
-            if(goal==null)return remember(decision(horizontalSolid(-lastDirection)?0:-lastDirection,0,180,false,"Target route made no progress: descend and revisit it from another passage"));
-            target=null;
+        if(!phase.equals("SCOUT_HIGH_CEILING")&&(blocked||dispatch&&blockedSince>=0&&now-blockedSince>=650&&(previousCommand||phase.equals("RECOVERY"))))return blockedPrimitive(wall,opening,support);
+        if(now<releaseUntil)return act(0,0,350,"Keep the recovery primitive released; do not alternate directions");
+        Track returning=track(returnTrack);
+        if(returning!=null){Decision d=returnToEnemy(returning);if(d!=null)return d;}
+        else returnTrack=-1;
+        Track forward=forwardEnemy();
+        if(forward!=null&&touching(forward,f)) {
+            markContact(forward);return act(corridorDirection,0,forward.heavy>.6?260:180,"Ember contact attempted; sweep onward while the target burns");
         }
-        if (target!=null && touching(target,f)) {
-            target.touchedAt=now;target.missingFrames=0;target.absentSince=-1;
-            int through=target.x>=px?1:-1;
-            if(horizontalSolid(through))through=-through;
-            long contact=target.heavy>.6?260:Math.max(100,Math.min(220,config.settleMs));
-            goal=null;
-            return remember(decision(through,0,contact,false,"Ember contact attempted; keep moving and verify the target after burn time"));
+        if(highRoofPending&&entered&&sawAir)unseenRoofColumns.add(key(cellX(px+corridorDirection*.12),room));
+        if(phase.equals("SCOUT_HIGH_CEILING")&&!highRoofPending){finishScout();return act(0,0,350,"Roof search now visible: descend before completing the ground return");}
+        if(phase.equals("SCOUT_HIGH_CEILING")) {
+            if(usedJumps>=jumpBudget()){finishScout();return act(corridorDirection,0,350,"Scout charges spent: descend and recharge on observed ground");}
+            int pulse=measuredAirPulse()?1:0;
+            return act(blocked||opening!=null&&Math.abs(opening[0]-px)<.10?0:corridorDirection,pulse,350,pulse>0?"High roof still outside the view: one measured Hookshot":"High-roof scout: coast through the current ascent before the next pulse");
         }
-
-        long start=nearestFree(px,py,3), finish=nearestFree(goal.x,goal.y,5);
-        List<Long> route=(spatial&&tiles.size()>8)?route(start,finish):Collections.emptyList();
-        double nextX=goal.x,nextY=goal.y;
-        if(!route.isEmpty()) {
-            routeFailures=0;
-            // Look two cells ahead while retaining the obstacle-constrained first step.
-            long next=route.get(Math.min(2,route.size()-1));nextX=wx(x(next));nextY=wy(y(next));
-        } else if(spatial && distance(px,py,goal.x,goal.y)>.12) {
-            routeFailures++;
-            // There is no certified route to this target. Go to reachable free-space boundaries instead.
-            Goal detour=reachableFrontier(start,goal);
-            if(detour!=null){nextX=detour.x;nextY=detour.y;reason="Follow free terrain around the blocked target";}
-            else return remember(decision(horizontalSolid(lastDirection)?-lastDirection:lastDirection,0,160,false,"No clear route: change position below the obstacle and reobserve"));
+        if(highRoofPending&&entered&&sawAir&&!scoutDone&&now-lastJump>=250) {
+            scoutX=px;phase="SCOUT_HIGH_CEILING";int pulse=measuredAirPulse()?1:0;
+            return act(corridorDirection,pulse,350,pulse>0?"Normal traversal has not revealed the roof: scout with one Hookshot":"Normal jump is still rising; observe it before spending a Hookshot");
         }
-        double dx=nextX-px,dy=nextY-py;
-        int dir=Math.abs(dx)<.025?0:(dx>0?1:-1);
-        if(dir!=0&&horizontalSolid(dir)) {
-            // A vertical waypoint is preferable to continuing to push into a mapped wall.
-            dir=0;
-            if(dy>=-.035)return remember(decision(-lastDirection,0,180,false,"Mapped wall: retreat toward reachable free space"));
-        }
-        boolean above=dy<-.045 || (goal.y<py-.085 && Math.abs(goal.x-px)<.18 && !horizontalSolid(dir));
-        int jump=jumpNeeded(above,dy,f)?1:0;
-        if(jump>0&&dispatch)recordJump(registered);
-        // A high goal with depleted Hookshots explicitly chooses a landing, never repeats dead taps.
-        if(above&&usedJumps>=jumpBudget()&&jump==0&&!f.grounded) {
-            Goal landing=landingGoal();
-            if(landing!=null){int toward=Math.abs(landing.x-px)<.035?0:(landing.x>px?1:-1);dir=horizontalSolid(toward)?0:toward;}
-            return remember(decision(dir,0,200,false,"Hookshots spent: land on mapped support before the next ascent"));
-        }
-        long duration=Math.max(120,Math.min(350,config.moveMs));
-        if(target!=null&&distance(px,py,target.x,target.y)<.08)duration=Math.min(220,duration);
-        String task=goal.kind.equals("enemy")?"Follow the stored enemy position":goal.kind.equals("ceiling")?"Inspect an unchecked ceiling section with clearance":goal.kind.equals("gate")?"Return to the gate after checking the room":"Explore a reachable boundary of the room atlas";
-        if(jump>0)task+="; one Hookshot, then observe its motion";
-        else if(above&&velocityY<-.07)task+="; coast during the current ascent";
-        return remember(decision(dir,jump,duration,false,task));
+        if(forward!=null&&forward.ceilingCandidate&&forward.y<py-.13&&Math.abs(forward.x-px)<.24&&measuredAirPulse())
+            return act(corridorDirection,1,350,"Intercept the visible overhead enemy with one measured Hookshot");
+        Track missed=entered?missedEnemy():null;
+        if(missed!=null){startEnemyReturn(missed);Decision revisit=returnToEnemy(missed);if(revisit!=null)return revisit;}
+        if(!entered){goal=new Goal(entryX+.16,py,"enter corridor",-1);return act(corridorDirection,groundJumpReady()?1:0,normalDuration(),"Enter the first corridor with forward jump movement; retain rear targets for later");}
+        phase=sectorCleared&&!highRoofPending?"CONTINUE":"GROUND_SWEEP";
+        int jump=groundJumpReady()?1:0;goal=new Goal(px+corridorDirection*.20,py,phase.toLowerCase(Locale.ROOT),-1);
+        return act(corridorDirection,jump,normalDuration(),jump>0?"Sweep forward with the normal ground jump; visible ceiling counts as inspected":
+                phase.equals("CONTINUE")?"Ordinary enemies cleared: advance without waiting for the gate animation":"Keep the corridor direction and coast or walk through the ground enemies");
     }
-
     private void registerCamera(FarmEngine.Frame f) {
         double retainedX=cameraX,retainedY=cameraY;
         registered=f.cameraConfidence>=CAMERA_MIN;
@@ -303,9 +269,11 @@ public final class MapNavigator {
                 // Geometry cannot establish the missing offset. Open an unlinked
                 // map section while preserving the previous atlas, rather than
                 // falsely joining two screen origins or deleting off-screen targets.
-                room++;biasX=room*20-f.cameraX;biasY=-f.cameraY;cameraX=room*20;cameraY=0;
-                initialMap=true;previousX=previousY=Double.NaN;previousAt=-1;goal=null;blockedSince=-1;
-                gateX=gateY=Double.NaN;gateAt=-1;failedEscapes=0;
+                room++;biasX=room*SECTION_GAP-f.cameraX;biasY=-f.cameraY;cameraX=room*SECTION_GAP;cameraY=0;
+                orientationPending=pendingDrop;pendingDrop=false;dropX=returnX=scoutX=Double.NaN;
+                corridorStartX=entryX=cameraX+f.playerX;corridorFloor=Double.NaN;returnTrack=-1;remainingSweepAt=-1;phase="GROUND_SWEEP";
+                previousX=previousY=Double.NaN;previousAt=-1;goal=null;blockedSince=-1;
+                gateX=Double.NaN;gateAt=-1;failedEscapes=0;
                 pendingAnchor=pendingSceneChange=false;
             } else if(pendingAnchor) {
                 registered=false;
@@ -348,22 +316,22 @@ public final class MapNavigator {
             double sx=(xx+.5)/f.terrainCols,sy=(yy+.5)/f.terrainRows;
             int mx=cellX(sx+cameraX),my=cellY(sy+cameraY);
             long key=key(mx,my);Tile t=tiles.get(key);
-            if(t==null){t=new Tile();t.evidence=sample==2?2:-2;tiles.put(key,t);}
+            if(t==null){t=new Tile();t.section=room;t.evidence=sample==2?2:-2;tiles.put(key,t);}
             else t.evidence=Math.max(-4,Math.min(4,t.evidence+(sample==2?2:-2)));
-            t.solid=t.evidence>0;t.seenAt=now;
+            t.solid=t.evidence>0;t.seenAt=now;t.observations++;
         }
         // Ceiling goals are below the underside by a body clearance, not inside the roof.
-        for(int yy=1;yy<f.terrainRows-4;yy++)for(int xx=1;xx<f.terrainCols-1;xx+=3) {
+        for(int yy=1;yy<f.terrainRows-4;yy++)for(int xx=1;xx<f.terrainCols-1;xx++) {
             if(f.terrainCells[yy*f.terrainCols+xx]!=2)continue;
             if(f.terrainCells[(yy+1)*f.terrainCols+xx]!=1||f.terrainCells[(yy+2)*f.terrainCols+xx]!=1||f.terrainCells[(yy+3)*f.terrainCols+xx]!=1)continue;
-            double cx=(xx+.5)/f.terrainCols+cameraX,cy=(yy+3.3)/f.terrainRows+cameraY;
-            long section=key(cellX(cx)/3,cellY(cy));
-            if(!ceilings.containsKey(section))ceilings.put(section,new Ceiling(cx,cy));
+            double cx=(xx+.5)/f.terrainCols+cameraX,cy=(yy+1.)/f.terrainRows+cameraY;
+            long section=key(cellX(cx),cellY(cy));
+            if(!ceilings.containsKey(section))ceilings.put(section,new Ceiling(cx,cy,room));
         }
     }
 
     private void observeFree(int x,int y,boolean visit) {
-        Tile t=tiles.get(key(x,y));if(t==null){t=new Tile();t.evidence=-2;tiles.put(key(x,y),t);}
+        Tile t=tiles.get(key(x,y));if(t==null){t=new Tile();t.section=room;t.evidence=-2;tiles.put(key(x,y),t);}
         if(t.solid)return; // Gold aura/body bounds must never cut a hole into an observed wall.
         t.solid=false;t.evidence=Math.min(-1,t.evidence);t.visited|=visit;t.seenAt=now;
     }
@@ -381,15 +349,22 @@ public final class MapNavigator {
         long measuredAt=f.capturedAt;
         if(previousAt>=0&&measuredAt>previousAt) {
             double dt=(measuredAt-previousAt)/1000.;double dx=px-previousX,dy=py-previousY;
-            velocityY=dy/Math.max(.08,dt);
+            double previousVelocity=velocityY;
+            velocityY=dy/Math.max(.08,dt);velocityX=dx/Math.max(.08,dt);
             boolean measurable=registered||(!Double.isFinite(f.cameraX)&&Math.abs(f.cameraDx)+Math.abs(f.cameraDy)<.001);
             if(measurable&&Math.abs(dx)+Math.abs(dy)>.010) {
                 lastProgress=now;
                 if(Math.abs(dx)>.08)failedEscapes=Math.max(0,failedEscapes-1);
             }
-            if(measurable&&Math.abs(dx)>.007)blockedSince=-1;
+            if(measurable&&dx*lastDirection>.012){blockedSince=-1;if(phase.equals("RECOVERY"))phase="GROUND_SWEEP";}
             else if(dispatch&&measurable&&previousCommand&&lastDirection!=0&&measuredAt-previousAt>=100&&blockedSince<0)blockedSince=now-(measuredAt-previousAt);
             if(!measurable)velocityY=0;
+            if(measurable&&previousCommand&&Math.abs(velocityX)>.04&&Math.abs(velocityX)<1.2)
+                horizontalSpeed=.8*horizontalSpeed+.2*Math.abs(velocityX);
+            if(measurable&&!f.grounded&&!f.ceilingReached&&lastJump<previousAt&&dt<.8){
+                double acceleration=(velocityY-previousVelocity)/dt;
+                if(acceleration>.35&&acceleration<4.5)gravity=.85*gravity+.15*acceleration;
+            }
             if(!f.grounded&&(measurable&&Math.abs(dy)>.008||airFrames>=1))sawAir=true;
             if(learningJump&&measurable&&measuredAt>jumpObservedAfter) {
                 if(f.ceilingReached)learningJump=false;
@@ -405,12 +380,15 @@ public final class MapNavigator {
         }
         if(lastProgress<0)lastProgress=now;
         updateGroundEvidence(f);
-        previousX=px;previousY=py;previousAt=measuredAt;lastGrounded=f.grounded;
+        previousX=px;previousY=py;previousAt=measuredAt;
     }
     private void updateGroundEvidence(FarmEngine.Frame f) {
         if(f.grounded) {
             groundedFrames++;airFrames=0;
             if(groundedFrames>=2&&sawAir){usedJumps=0;sawAir=false;}
+            // Independent support geometry plus a genuine airborne phase allows
+            // immediate repeat jumping without imposing a second stationary frame.
+            if(sawAir&&frame==f){double[] floor=supportFloor();if(floor!=null&&Math.abs(floor[1]-py-bodyHalfH())<.035){usedJumps=0;sawAir=false;}}
         } else {groundedFrames=0;airFrames++;if(airFrames>=2&&usedJumps>0)sawAir=true;}
     }
 
@@ -420,18 +398,19 @@ public final class MapNavigator {
             if(b==null||b.length<4||!valid(b[0],b[1])||!valid(b[2],b[3])||b[2]<=b[0]||b[3]<=b[1])continue;
             double ex=(b[0]+b[2])/2+cameraX,ey=(b[1]+b[3])/2+cameraY;
             Track best=null;double closest=.14;
-            for(Track t:tracks)if(!t.matched) {
+            for(Track t:tracks)if(t.section==room&&!t.matched) {
                 double d=distance(ex,ey,t.x,t.y);if(d<closest){closest=d;best=t;}
             }
-            if(best==null){best=new Track();best.id=nextTrack++;best.sector=activeSector;tracks.add(best);}
+            if(best==null){best=new Track();best.id=nextTrack++;best.firstSeen=now;best.sector=activeSector;best.section=room;best.corridor=corridor;tracks.add(best);history.add(best);}
             best.x=ex;best.y=ey;best.width=b[2]-b[0];best.height=b[3]-b[1];
             best.heavy=b.length>5?b[5]:0;best.seenAt=now;best.matched=true;
             best.ceilingCandidate|=ey<py-.14;
+            for(Ceiling c:ceilings.values())if(c.section==room&&Math.abs(c.x-ex)<.07&&ey>=c.y&&ey-c.y<.16)best.ceilingCandidate=true;
             best.absentSince=-1;best.missingFrames=0;
             if(b.length>4&&b[4]>=.6&&best.touchedAt<0)best.touchedAt=now;
         }
         for(int i=tracks.size()-1;i>=0;i--) {
-            Track t=tracks.get(i);if(t.matched)continue;
+            Track t=tracks.get(i);if(t.section!=room||t.matched)continue;
             double sx=t.x-cameraX,sy=t.y-cameraY;
             // Off-screen or occluded absence cannot clear an enemy from memory.
             boolean revisited=Math.abs(t.x-px)<.15&&Math.abs(t.y-py)<.16;
@@ -440,7 +419,7 @@ public final class MapNavigator {
             if(revisited&&visible&&clear&&now-t.seenAt>=BURN_GRACE_MS) {
                 if(t.absentSince<0)t.absentSince=now;t.missingFrames++;
                 if(t.missingFrames>=3&&now-t.absentSince>=500) {
-                    if(t.touchedAt>=0)tracks.remove(i);
+                    if(t.touchedAt>=0)retireTrack(i);
                     else {t.deferredUntil=now+5000;t.absentSince=-1;t.missingFrames=0;}
                 }
             } else {t.missingFrames=0;t.absentSince=-1;}
@@ -448,181 +427,254 @@ public final class MapNavigator {
     }
 
     private void updateCeilingCoverage() {
-        for(Ceiling c:ceilings.values())if(Math.abs(c.x-px)<.10&&Math.abs(c.y-py)<.10)c.checked=true;
+        for(Ceiling c:ceilings.values()) {
+            if(c.section!=room)continue;
+            double sx=c.x-cameraX,sy=c.y-cameraY;
+            // Seeing an underside is distinct from moving the hull close to it.
+            // Three clear rows contain the hanging-enemy search area; HUD, aura,
+            // player and other occlusions remain unknown in the fresh terrain grid.
+            boolean readable=sx>.035&&sx<.965&&sy>.17&&sy<.71
+                    &&localFree(sx,sy+.025)&&localFree(sx,sy+.065)&&localFree(sx,sy+.105);
+            if(readable&&frame.capturedAt>c.lastView){c.clearViews++;c.lastView=frame.capturedAt;if(c.clearViews>=2)c.checked=true;}
+            if(c.checked)unseenRoofColumns.remove(key(cellX(c.x),room));
+        }
         if(goal!=null&&!goal.kind.equals("enemy")&&distance(px,py,goal.x,goal.y)<.065) {
             Tile t=tiles.get(key(cellX(goal.x),cellY(goal.y)));if(t!=null)t.visited=true;
             goal=null;
         }
     }
 
-    private Goal chooseGoal() {
-        Track best=null;double score=Double.POSITIVE_INFINITY;
-        for(Track t:tracks) {
-            if(t.touchedAt>=0&&now-t.touchedAt<BURN_GRACE_MS)continue;
-            if(t.deferredUntil>now)continue;
-            if(!goalReachable(t.x,t.y)){t.deferredUntil=now+1600;continue;}
-            double s=distance(px,py,t.x,t.y)+(now-t.seenAt>1200?.03:0);
-            // Retaining a reachable goal prevents frame-to-frame target oscillation.
-            if(goal!=null&&goal.track==t.id)s-=.06;
-            if(t.y<py-.10)s-=.03;
-            if(s<score){score=s;best=t;}
+    private void buildBorders() {
+        HashMap<String,TreeSet<Integer>> lines=new HashMap<>();
+        for(Map.Entry<Long,Tile> e:tiles.entrySet())if(e.getValue().solid) {
+            int xx=x(e.getKey()),yy=y(e.getKey()),section=e.getValue().section;
+            if(mapValue(xx,yy-1)==1)edge(lines,1,section,yy,xx);
+            if(mapValue(xx,yy+1)==1)edge(lines,2,section,yy+1,xx);
+            if(mapValue(xx-1,yy)==1)edge(lines,3,section,xx,yy);
+            if(mapValue(xx+1,yy)==1)edge(lines,3,section,xx+1,yy);
         }
-        if(best!=null)return new Goal(best.x,best.y,"enemy",best.id);
-        Ceiling unchecked=null;score=Double.POSITIVE_INFINITY;
-        for(Ceiling c:ceilings.values())if(!c.checked) {
-            if(c.deferredUntil>now)continue;
-            if(!goalReachable(c.x,c.y)){c.deferredUntil=now+1600;continue;}
-            double s=distance(px,py,c.x,c.y)+(c.x<px-.12?.06:0);
-            if(s<score){score=s;unchecked=c;}
-        }
-        if(unchecked!=null)return new Goal(unchecked.x,unchecked.y,"ceiling",-1);
-        if(goal!=null&&goal.kind.equals("frontier")&&distance(px,py,goal.x,goal.y)>.065
-                &&passable(key(cellX(goal.x),cellY(goal.y)))&&isFrontier(key(cellX(goal.x),cellY(goal.y))))return goal;
-        Goal frontier=reachableFrontier(nearestFree(px,py,3),null);
-        if(frontier!=null)return frontier;
-        if(Double.isFinite(gateX)&&goalReachable(gateX,gateY))return new Goal(gateX,gateY,"gate",-1);
-        return null;
-    }
-
-    private Goal reachableFrontier(long start,Goal toward) {
-        if(!passable(start))return null;
-        ArrayDeque<Long> q=new ArrayDeque<>();Set<Long>seen=new HashSet<>();q.add(start);seen.add(start);
-        Goal best=null;double score=Double.NEGATIVE_INFINITY;int explored=0;
-        while(!q.isEmpty()&&explored++<MAX_ROUTE) {
-            long k=q.removeFirst();int tx=x(k),ty=y(k);Tile tile=tiles.get(k);
-            for(int[]d:NEIGHBORS) {
-                long n=key(tx+d[0],ty+d[1]);
-                if(tiles.containsKey(n)&&passable(n)&&seen.add(n))q.addLast(n);
+        borderRows.clear();
+        for(Map.Entry<String,TreeSet<Integer>> e:lines.entrySet()) {
+            String[] parts=e.getKey().split(":");int type=Integer.parseInt(parts[0]),section=Integer.parseInt(parts[1]),line=Integer.parseInt(parts[2]);
+            int first=Integer.MIN_VALUE,last=first;
+            for(int p:e.getValue()) {
+                if(first==Integer.MIN_VALUE)first=last=p;
+                else if(p==last+1)last=p;
+                else {border(type,section,line,first,last);first=last=p;}
             }
-            double fx=wx(tx),fy=wy(ty),dist=distance(px,py,fx,fy);
-            if(!isFrontier(k)||dist<.085||tile==null||tile.visited)continue;
-            // Ignore screen-mask borders: exploration must lead through playable room space.
-            double sy=fy-cameraY;if(sy<.21||sy>.84)continue;
-            double s=-dist+(fy<py-.05?.08:0)+(fx>px?.16:0);
-            if(toward!=null)s-=distance(fx,fy,toward.x,toward.y);
-            if(s>score){score=s;best=new Goal(fx,fy,"frontier",-1);}
+            if(first!=Integer.MIN_VALUE)border(type,section,line,first,last);
+        }
+    }
+    private void edge(HashMap<String,TreeSet<Integer>> lines,int type,int section,int line,int p) {
+        lines.computeIfAbsent(type+":"+section+":"+line,k->new TreeSet<>()).add(p);
+    }
+    private void border(int type,int section,int line,int first,int last) {
+        if(last-first+1<(type==3?4:3))return;
+        borderRows.add(type==3?new double[]{line/(double)COLS,first/(double)ROWS,line/(double)COLS,(last+1)/(double)ROWS,type,section,.8}:
+                new double[]{first/(double)COLS,line/(double)ROWS,(last+1)/(double)COLS,line/(double)ROWS,type,section,.8});
+    }
+    private double[][] exportBorders() {
+        double[][] rows=new double[borderRows.size()][];int i=0;
+        for(double[] b:borderRows){rows[i]=b.clone();rows[i][0]-=b[5]*SECTION_GAP;rows[i][2]-=b[5]*SECTION_GAP;i++;}return rows;
+    }
+    private double[][] exportCoverage() {
+        double[][] rows=new double[ceilings.size()+unseenRoofColumns.size()][];int i=0;
+        for(Ceiling c:ceilings.values())rows[i++]=new double[]{c.x-c.section*SECTION_GAP-.5/COLS,c.y,c.x-c.section*SECTION_GAP+.5/COLS,c.section,c.checked?1:0};
+        for(long column:unseenRoofColumns){int section=y(column);double cx=wx(x(column))-section*SECTION_GAP;rows[i++]=new double[]{cx-.5/COLS,Double.NaN,cx+.5/COLS,section,0};}
+        return rows;
+    }
+    private void retireTrack(int index){Track t=tracks.remove(index);t.clearedAt=now;if(returnTrack==t.id)returnTrack=-1;}
+    private double[][] exportEnemyHistory(){
+        int start=Math.max(0,history.size()-1000);double[][] rows=new double[history.size()-start][];
+        for(int i=start;i<history.size();i++){Track t=history.get(i);rows[i-start]=new double[]{t.id,t.x-t.section*SECTION_GAP,t.y,t.section,t.firstSeen,t.seenAt,t.touchedAt,t.clearedAt<0?Double.NaN:t.clearedAt,.6};}
+        return rows;
+    }
+    private void recordPath() {
+        double localX=px-room*SECTION_GAP;
+        if(!pathRows.isEmpty()){double[] p=pathRows.get(pathRows.size()-1);if((int)p[2]==room&&Math.abs(p[0]-localX)+Math.abs(p[1]-py)<.005&&frame.capturedAt-p[3]<1000)return;}
+        if(pathRows.size()>=MAX_PATH)for(int i=pathRows.size()-2;i>0;i-=2)pathRows.remove(i);
+        pathRows.add(new double[]{localX,py,room,frame.capturedAt,registered?frame.cameraConfidence:.65});
+    }
+    private double[] supportFloor() {
+        double[] best=null;double nearest=Double.POSITIVE_INFINITY;
+        for(double[] b:borderRows)if((int)b[5]==room&&b[4]==1&&px>=b[0]-.045&&px<=b[2]+.045&&b[1]>=py-bodyHalfH()&&b[1]-py<.42) {
+            if(b[1]-py<nearest){nearest=b[1]-py;best=b;}
         }
         return best;
     }
-    private boolean isFrontier(long cell) {
-        int unknown=0,xx=x(cell),yy=y(cell);
-        for(int[]d:NEIGHBORS) {
-            long next=key(xx+d[0],yy+d[1]);if(tiles.containsKey(next))continue;
-            double sx=wx(xx+d[0])-cameraX,sy=wy(yy+d[1])-cameraY;
-            if(sy<.20||sy>.86||sx<.42&&sy>.67)continue;
-            unknown++;
-        }
-        return unknown>=3;
-    }
-
-    private Goal landingGoal() {
-        Goal best=null;double score=Double.POSITIVE_INFINITY;
-        for(Map.Entry<Long,Tile>e:tiles.entrySet())if(e.getValue().solid) {
-            int tx=x(e.getKey()),ty=y(e.getKey());double lx=wx(tx),ly=wy(ty-2);
-            if(ly<py+.04||Math.abs(lx-px)>.35||!passable(key(tx,ty-2)))continue;
-            double s=distance(px,py,lx,ly);if(s<score){score=s;best=new Goal(lx,ly,"land",-1);}
+    private double[] wallAhead(int side) {
+        double[] best=null;double nearest=Double.POSITIVE_INFINITY;
+        for(double[] b:borderRows)if((int)b[5]==room&&b[4]==3&&b[3]-b[1]>=.15&&b[1]<py+bodyHalfH()&&b[3]>py-bodyHalfH()) {
+            double gap=(b[0]-px)*side-bodyHalfW();if(gap>=-.035&&gap<nearest){nearest=gap;best=b;}
         }
         return best;
     }
-
-    private static final int[][] NEIGHBORS={{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
-    private List<Long> route(long start,long finish) {
-        if(start==Long.MIN_VALUE||finish==Long.MIN_VALUE||!passable(start)||!passable(finish))return Collections.emptyList();
-        if(start==finish)return Collections.singletonList(start);
-        PriorityQueue<Node>open=new PriorityQueue<>(Comparator.comparingDouble(n->n.rank));
-        HashMap<Long,Double>cost=new HashMap<>();HashMap<Long,Long>parent=new HashMap<>();
-        cost.put(start,0.);open.add(new Node(start,0,heuristic(start,finish)));int expanded=0;
-        while(!open.isEmpty()&&expanded++<MAX_ROUTE) {
-            Node node=open.poll();if(node.cost>cost.get(node.cell)+.0001)continue;
-            if(node.cell==finish) {
-                ArrayList<Long>p=new ArrayList<>();long k=finish;p.add(k);
-                while(k!=start){k=parent.get(k);p.add(k);}Collections.reverse(p);return p;
-            }
-            int xx=x(node.cell),yy=y(node.cell);
-            for(int[]d:NEIGHBORS) {
-                long next=key(xx+d[0],yy+d[1]);if(!passable(next))continue;
-                if(d[0]!=0&&d[1]!=0&&(!passable(key(xx+d[0],yy))||!passable(key(xx,yy+d[1]))))continue;
-                // Falling is free, climbing needs a remaining Hookshot or a supported landing.
-                if(!heightReachable(yy+d[1]))continue;
-                double add=d[0]!=0&&d[1]!=0?1.42:1;
-                if(d[1]<0)add+=.7; // conserve height and avoid gratuitous ceiling hugging
-                double nc=node.cost+add;
-                if(nc<cost.getOrDefault(next,Double.POSITIVE_INFINITY)) {
-                    cost.put(next,nc);parent.put(next,node.cell);open.add(new Node(next,nc,nc+heuristic(next,finish)));
-                }
-            }
+    private double wallGap(double[] b,int side){return (b[0]-px)*side-bodyHalfW();}
+    private boolean wallContact(int side){if(side==0)return false;if(side>0&&frame.wallRight||side<0&&frame.wallLeft)return true;double[] wall=wallAhead(side);return wall!=null&&wallGap(wall,side)<.025;}
+    private double predictionDistance(){return horizontalSpeed*(normalDuration()/1000.+Math.min(.4,Math.max(0,now-frame.capturedAt)/1000.))+.020;}
+    private double roofGap() {
+        double gap=Double.POSITIVE_INFINITY;
+        for(double[] b:borderRows)if((int)b[5]==room&&b[4]==2&&px>=b[0]-bodyHalfW()&&px<=b[2]+bodyHalfW()&&b[1]<py)
+            gap=Math.min(gap,py-bodyHalfH()-b[1]);
+        return gap;
+    }
+    private double[] findOpening(int side,double[] floor) {
+        if(floor==null)return null;
+        double edge=side>0?floor[2]:floor[0];if((edge-px)*side<-.06||(edge-px)*side>.30)return null;
+        double center=edge+side*.05;int known=0,free=0;
+        for(double dx:new double[]{-.018,.018})for(double dy:new double[]{.055,.095,.135}) {
+            int v=worldValue(center+dx,floor[1]+dy);if(v!=0)known++;if(v==1)free++;
         }
-        return Collections.emptyList();
+        if(known<4||free<4||worldValue(center,floor[1])==2||worldValue(center,floor[1]+.03)==2)return null;
+        return new double[]{center,floor[1],side};
     }
-    private double heuristic(long a,long b){return Math.abs(x(a)-x(b))+Math.abs(y(a)-y(b));}
-    private Set<Long> reachableCells(long start) {
-        if(!passable(start))return Collections.emptySet();
-        Set<Long> set=new HashSet<>();ArrayDeque<Long> q=new ArrayDeque<>();set.add(start);q.add(start);
-        int count=0;
-        while(!q.isEmpty()&&count++<MAX_ROUTE) {
-            long k=q.removeFirst();int xx=x(k),yy=y(k);
-            for(int[]d:NEIGHBORS) {
-                long n=key(xx+d[0],yy+d[1]);if(!passable(n)||!heightReachable(yy+d[1]))continue;
-                if(d[0]!=0&&d[1]!=0&&(!passable(key(xx+d[0],yy))||!passable(key(xx,yy+d[1]))))continue;
-                if(set.add(n))q.addLast(n);
+    private Decision followDrop() {
+        int side=Math.abs(dropX-px)>.035?(dropX>px?1:-1):0;
+        goal=new Goal(dropX,py+.2,"observed downward passage",-1);
+        if(wallContact(side))side=0;
+        if(now-dropAt>6500&&!frame.grounded)return decision(0,0,0,true,"Observed opening made no landing progress; inspect the corridor");
+        return act(side,0,350,"Follow the real floor opening downward; commit the next direction after landing");
+    }
+    private void commitObservedDrop(double[] floor) {
+        if(!frame.grounded||groundedFrames<2)return;
+        if(orientationPending&&floor!=null){
+            double[] forwardWall=wallAhead(corridorDirection);
+            if(forwardWall!=null&&wallGap(forwardWall,corridorDirection)<.20&&freeBody(px-corridorDirection*.08,py)){
+                corridorDirection=-corridorDirection;corridor++;corridorStartX=px;emptySweeps=0;
             }
+            orientationPending=false;corridorFloor=py;phase="GROUND_SWEEP";return;
         }
-        return set;
+        boolean lower=Double.isFinite(corridorFloor)&&py-corridorFloor>.18;
+        if(lower&&now-lastTurn>1200) {
+            int next=-corridorDirection;
+            boolean free=freeBody(px+next*.09,py)||floor!=null&&px>floor[0]+.10&&px<floor[2]-.10;
+            if(free&&(pendingDrop||velocityY>=-.02)) {
+                corridorDirection=next;corridor++;lastTurn=now;pendingDrop=false;dropX=Double.NaN;dropAt=-1;
+                corridorFloor=py;corridorStartX=px;emptySweeps=0;scoutDone=false;returnTrack=-1;returnX=Double.NaN;phase="GROUND_SWEEP";
+            }
+        } else if(!Double.isFinite(corridorFloor))corridorFloor=py;
+        if(!lower&&phase.equals("DROP_TO_CORRIDOR")&&now-dropAt>1800){dropX=Double.NaN;pendingDrop=false;phase="GROUND_SWEEP";}
     }
-    private boolean heightReachable(int row) {
-        // A geometry path cannot invent vertical flight after the last charge.
-        // Momentum adds a short remaining coast, and later observed landings refill the budget.
-        double rise=Math.max(0,jumpBudget()-usedJumps)*jumpRise*.9+Math.max(0,-velocityY)*.22;
-        return wy(row)>=py-rise-.045;
+    private boolean freeBody(double x,double y) {
+        for(double dx:new double[]{-bodyHalfW(),0,bodyHalfW()})for(double dy:new double[]{-bodyHalfH()*.5,0,bodyHalfH()*.5})if(worldValue(x+dx,y+dy)!=1)return false;
+        return true;
     }
-    private boolean goalReachable(double gx,double gy) {
-        if(!validTerrain(frame))return true;
-        long closest=nearestFree(gx,gy,4);
-        return closest!=Long.MIN_VALUE&&distance(wx(x(closest)),wy(y(closest)),gx,gy)<.11
-                &&reachable.contains(closest)&&heightReachable(y(closest));
+    private Decision blockedPrimitive(double[] wall,double[] opening,double[] floor) {
+        if(opening!=null){dropX=opening[0];pendingDrop=true;dropAt=now;phase="DROP_TO_CORRIDOR";return followDrop();}
+        double[] behind=findOpening(-corridorDirection,floor);
+        if(wall!=null&&behind!=null){dropX=behind[0];pendingDrop=true;dropAt=now;phase="DROP_TO_CORRIDOR";return followDrop();}
+        if(blockedSince<0)blockedSince=now;
+        if(now<releaseUntil)return act(0,0,350,"Keep the blocked primitive released; do not alternate wall pushes");
+        if(dispatch&&now-blockedSince>Math.max(3000,Math.min(8000,config.stuckTimeoutMs)))return decision(0,0,0,true,"No evidenced corridor continuation; preserve the map and inspect the obstruction");
+        phase="RECOVERY";
+        if(wall!=null) {
+            double rise=py-bodyHalfH()-wall[1];
+            if(frame.grounded&&rise>-.015&&rise<jumpRise*.8&&usedJumps==0&&roofGap()>.095&&failedEscapes==0) {
+                if(dispatch)failedEscapes++;return act(corridorDirection,1,280,"Verified low ledge: try its ground-jump primitive once");
+            }
+            releaseUntil=now+350;return act(0,0,350,"Rectangular corridor wall: release and look for actual downward continuation");
+        }
+        if(frame.grounded&&groundJumpReady()&&failedEscapes==0){if(dispatch)failedEscapes++;return act(corridorDirection,1,280,"Failed move without a wall: one ground-jump probe in the committed direction");}
+        if(dispatch)failedEscapes++;releaseUntil=now+350;
+        return act(0,0,350,"Failed movement primitive: coast and reobserve instead of flipping direction");
     }
-    private void deferGoal(Goal stale,long until) {
-        Track t=track(stale.track);if(t!=null)t.deferredUntil=until;
-        if(stale.kind.equals("ceiling"))for(Ceiling c:ceilings.values())
-            if(distance(c.x,c.y,stale.x,stale.y)<.05)c.deferredUntil=until;
+    private boolean roofStillOutsideView() {
+        if(!validTerrain(frame)||frame.ceilingReached||roofGap()<.10)return false;
+        double ahead=px+corridorDirection*.12;
+        for(double[] b:borderRows)if((int)b[5]==room&&b[4]==2&&ahead>=b[0]-.03&&ahead<=b[2]+.03&&b[1]<py) {
+            boolean checked=true;int count=0;
+            for(Ceiling c:ceilings.values())if(c.section==room&&Math.abs(c.x-ahead)<.14&&Math.abs(c.y-b[1])<.03){count++;checked&=c.checked;}
+            if(count>0&&checked)return false;
+            return b[1]-cameraY<.17;
+        }
+        int total=0,free=0;double sx=Math.max(.07,Math.min(.93,frame.playerX+corridorDirection*.08));
+        for(double sy=frame.playerY-bodyHalfH()-.06;sy>=.19;sy-=1./ROWS) {
+            int v=localValue(sx,sy);if(v==2)return false;total++;if(v==1)free++;
+        }
+        return total>=4&&free>=Math.ceil(total*.75);
     }
-    private boolean passable(long key) {
-        Tile center=tiles.get(key);if(center==null||center.solid)return false;
-        int xx=x(key),yy=y(key);
-        // Use the observed hull, not a fixed one-cell point robot, for clearance.
-        double halfW=frame!=null&&validCoordinate(frame.playerLeft)&&validCoordinate(frame.playerRight)?
-                Math.max(.014,Math.min(.065,(frame.playerRight-frame.playerLeft)/2)):.018;
-        double halfH=frame!=null&&validCoordinate(frame.playerTop)&&validCoordinate(frame.playerBottom)?
-                Math.max(.024,Math.min(.090,(frame.playerBottom-frame.playerTop)/2)):.030;
-        int rx=(int)Math.ceil(halfW*COLS+.5),ry=(int)Math.ceil(halfH*ROWS+.5);
-        for(int dx=-rx;dx<=rx;dx++)for(int dy=-ry;dy<=ry;dy++) {
-            if(Math.abs(dx)/(double)COLS>=halfW+.5/COLS-.001||Math.abs(dy)/(double)ROWS>=halfH+.5/ROWS-.001)continue;
-            Tile t=tiles.get(key(xx+dx,yy+dy));if(t!=null&&t.solid)return false;
+    private void finishScout(){scoutDone=true;highRoofPending=false;returnX=Double.isFinite(scoutX)?scoutX:px;phase="RETURN_GROUND";}
+    private boolean groundJumpReady(){return frame.grounded&&usedJumps==0&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&jumpFits(corridorDirection)&&!wallContact(corridorDirection);}
+    private boolean measuredAirPulse(){return usedJumps<jumpBudget()&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&!frame.ceilingReached&&jumpFits(corridorDirection)&&(frame.grounded&&usedJumps==0||velocityY>=-.10);}
+    /** A short ballistic primitive, checked as a swept body rather than an air-grid path. */
+    private boolean jumpFits(int side){
+        if(roofGap()<jumpRise+.035)return false;
+        double impulse=Math.sqrt(2*gravity*jumpRise),horizon=Math.min(.65,2*impulse/gravity);
+        for(double t=.04;t<=horizon;t+=.04){
+            double xx=px+side*horizontalSpeed*t,yy=py-impulse*t+.5*gravity*t*t;
+            for(double dx:new double[]{-bodyHalfW(),bodyHalfW()})for(double dy:new double[]{-bodyHalfH(),0})
+                if(worldValue(xx+dx,yy+dy)==2)return false;
         }
         return true;
     }
-    private long nearestFree(double xx,double yy,int radius) {
-        int cx=cellX(xx),cy=cellY(yy);long best=Long.MIN_VALUE;double score=Double.POSITIVE_INFINITY;
-        for(int dx=-radius;dx<=radius;dx++)for(int dy=-radius;dy<=radius;dy++) {
-            long k=key(cx+dx,cy+dy);if(!passable(k))continue;
-            double s=dx*dx+dy*dy;if(s<score){score=s;best=k;}
+    private Track forwardEnemy() {
+        Track best=null;double score=Double.POSITIVE_INFINITY;
+        for(Track t:tracks)if(t.section==room&&t.matched&&(t.touchedAt<0||now-t.touchedAt>=BURN_GRACE_MS)&&(t.x-px)*corridorDirection>=-.065) {
+            double d=distance(px,py,t.x,t.y);if(d<score){score=d;best=t;}
         }
         return best;
     }
-    private boolean horizontalSolid(int direction) {
-        if(direction==0)return false;
-        if(direction>0&&frame.wallRight||direction<0&&frame.wallLeft)return true;
-        double width=validCoordinate(frame.playerLeft)&&validCoordinate(frame.playerRight)?Math.max(.015,(frame.playerRight-frame.playerLeft)/2):.018;
-        double height=validCoordinate(frame.playerTop)&&validCoordinate(frame.playerBottom)?Math.max(.02,(frame.playerBottom-frame.playerTop)/2):.028;
-        double sx=frame.playerX+direction*(width+.012);
-        for(double sy=frame.playerY-height*.6;sy<=frame.playerY+height*.6;sy+=.02)if(localSolid(sx,sy))return true;
-        return false;
+    private Track missedEnemy() {
+        Track best=null;double score=Double.POSITIVE_INFINITY;
+        for(Track t:tracks)if(t.section==room&&t.corridor==corridor&&t.deferredUntil<=now&&(t.touchedAt<0||now-t.touchedAt>=BURN_GRACE_MS)&&(t.x-px)*corridorDirection<-.085) {
+            if(remainingEnemies==0&&!t.ceilingCandidate)continue;
+            int side=t.x>px?1:-1;double[] wall=wallAhead(side);if(wall!=null&&wallGap(wall,side)<Math.abs(t.x-px)-.04)continue;
+            double d=Math.abs(t.x-px);if(d<score){score=d;best=t;}
+        }
+        return best;
     }
-    private boolean roofTooClose() {
-        double top=validCoordinate(frame.playerTop)?frame.playerTop:frame.playerY-.028;
-        for(double sx=frame.playerX-.02;sx<=frame.playerX+.02;sx+=.02)
-            if(localSolid(sx,top-.025)||localSolid(sx,top-.055))return true;
-        return false;
+    private void startEnemyReturn(Track t){
+        returnTrack=t.id;returnAt=now;phase="REVISIT_ENEMY";
+        returnDeadline=now+Math.max(6500,Math.min(60000,(long)(Math.abs(t.x-px)/Math.max(.08,horizontalSpeed)*1800)+3000));
+    }
+    private Decision returnToEnemy(Track t) {
+        if(now>returnDeadline||t.section!=room){t.deferredUntil=now+5000;returnTrack=-1;phase="GROUND_SWEEP";return null;}
+        if(t.touchedAt>=0&&now-t.touchedAt<BURN_GRACE_MS){returnTrack=-1;phase="GROUND_SWEEP";return null;}
+        if(touching(t,frame)){markContact(t);returnTrack=-1;phase="GROUND_SWEEP";return act(corridorDirection,0,t.heavy>.6?260:180,"Named missed enemy contact attempted; resume the committed corridor direction");}
+        goal=new Goal(t.x,t.y,"named missed enemy "+t.id,t.id);
+        int side=Math.abs(t.x-px)>.035?(t.x>px?1:-1):0;
+        if(wallContact(side)){t.deferredUntil=now+2500;returnTrack=-1;phase="GROUND_SWEEP";return null;}
+        if(dispatch&&blockedSince>=returnAt&&now-blockedSince>3000)
+            return decision(0,0,0,true,"Named enemy return made no horizontal progress; preserve the map and inspect the passage");
+        int pulse=frame.grounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
+        if(t.ceilingCandidate&&t.y<py-.13&&measuredAirPulse())pulse=1;
+        return act(side,pulse,normalDuration(),pulse>0?"Named enemy return: ground jump through its body":"Named enemy return: descend/coast to its stored ground position");
+    }
+    private Decision remainingSweep(){
+        if(remainingEnemies==0){phase="GROUND_SWEEP";remainingSweepAt=-1;emptySweeps=0;return null;}
+        for(Track t:tracks)if(t.section==room&&t.corridor==corridor&&t.matched&&touching(t,frame))markContact(t);
+        int side=-corridorDirection;
+        boolean reached=Double.isFinite(corridorStartX)&&(px-corridorStartX)*corridorDirection<.08;
+        if(reached||wallContact(side)){
+            emptySweeps++;phase="GROUND_SWEEP";remainingSweepAt=-1;
+            return act(corridorDirection,0,normalDuration(),"Ground return sweep finished: sweep forward again and re-read the enemy count");
+        }
+        if(dispatch&&blockedSince>=remainingSweepAt&&now-blockedSince>3000)
+            return decision(0,0,0,true,"Remaining-enemy return made no progress; do not count a partial sweep as complete");
+        int jump=frame.grounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
+        return act(side,jump,normalDuration(),"Enemy counter is positive: jump-move back through the observed corridor to find missed bots");
+    }
+    private void resolveOrdinary(){for(int i=tracks.size()-1;i>=0;i--)if(!tracks.get(i).ceilingCandidate&&tracks.get(i).sector<=activeSector&&(runEnded||!tracks.get(i).matched))retireTrack(i);}
+    private void markContact(Track t){if(t.touchedAt<0||now-t.touchedAt>=BURN_GRACE_MS){t.touchedAt=now;t.missingFrames=0;t.absentSince=-1;}}
+    private Decision unregisteredPass() {
+        if(cameraGapAt>=0&&now-cameraGapAt>8000)return decision(0,0,0,true,"Camera registration did not recover; saved map remains partial");
+        if(wallContact(corridorDirection)||frame.ceilingReached)return act(0,0,350,"Unregistered contact: release movement and preserve the corridor direction");
+        if(frame.grounded&&localFree(frame.playerX+corridorDirection*.06,frame.playerY))return act(corridorDirection,0,180,"Camera registration uncertain: short grounded probe in the corridor direction; atlas frozen");
+        return act(0,0,350,"Unregistered airborne view: fall naturally while the camera recovers; atlas frozen");
+    }
+    private Decision act(int dir,int pulse,long duration,String text){if(dispatch&&pulse>0)recordJump(registered);return remember(decision(dir,pulse,duration,false,text));}
+    private long normalDuration(){return Math.max(150,Math.min(350,config.moveMs));}
+    private double bodyHalfW(){return validCoordinate(frame.playerLeft)&&validCoordinate(frame.playerRight)?Math.max(.014,Math.min(.065,(frame.playerRight-frame.playerLeft)/2)):.02;}
+    private double bodyHalfH(){return validCoordinate(frame.playerTop)&&validCoordinate(frame.playerBottom)?Math.max(.024,Math.min(.09,(frame.playerBottom-frame.playerTop)/2)):.035;}
+    private int worldValue(double x,double y){return mapValue(cellX(x),cellY(y));}
+    private int mapValue(int x,int y){Tile t=tiles.get(key(x,y));return t==null?0:t.solid?2:1;}
+    private boolean completeEvidence() {
+        if(!runEnded||!runSucceeded||room!=0||pendingAnchor||highRoofPending||!unseenRoofColumns.isEmpty()||!tracks.isEmpty()||ceilings.isEmpty())return false;
+        for(Ceiling c:ceilings.values())if(!c.checked)return false;
+        for(Map.Entry<Long,Tile> e:tiles.entrySet())if(!e.getValue().solid) {
+            int x=x(e.getKey()),y=y(e.getKey());if(mapValue(x-1,y)==0||mapValue(x+1,y)==0||mapValue(x,y-1)==0||mapValue(x,y+1)==0)return false;
+        }
+        return true;
     }
     private boolean localSolid(double sx,double sy){return localValue(sx,sy)==2;}
     private boolean localFree(double sx,double sy){return localValue(sx,sy)==1;}
@@ -631,26 +683,12 @@ public final class MapNavigator {
         int xx=Math.min(frame.terrainCols-1,(int)(sx*frame.terrainCols)),yy=Math.min(frame.terrainRows-1,(int)(sy*frame.terrainRows));
         return frame.terrainCells[yy*frame.terrainCols+xx];
     }
-    private boolean jumpNeeded(boolean above,double dy,FarmEngine.Frame f) {
-        if(!above||usedJumps>=jumpBudget()||f.ceilingReached||roofTooClose()||now-lastJump<Math.max(450,config.jumpSpacingMs))return false;
-        // Do not retrigger while the preceding jump is still making useful ascent.
-        if(!f.grounded&&now-lastJump<900&&velocityY<-.09&&dy>-.18)return false;
-        return f.grounded||velocityY>-.09||now-lastJump>=700;
-    }
     private boolean touching(Track t,FarmEngine.Frame f) {
         double l=validCoordinate(f.playerLeft)?f.playerLeft+cameraX:px-.018,r=validCoordinate(f.playerRight)?f.playerRight+cameraX:px+.018;
         double top=validCoordinate(f.playerTop)?f.playerTop+cameraY:py-.030,bottom=validCoordinate(f.playerBottom)?f.playerBottom+cameraY:py+.030;
         return t.x+t.width/2>=l&&t.x-t.width/2<=r&&t.y+t.height/2>=top&&t.y-t.height/2<=bottom;
     }
     private Track track(int id){if(id<0)return null;for(Track t:tracks)if(t.id==id)return t;return null;}
-    private double[] nearestLocalEnemy(FarmEngine.Frame f) {
-        double[] best=null;double score=Double.POSITIVE_INFINITY;
-        if(f.enemyBoxes==null)return null;
-        for(double[]b:f.enemyBoxes)if(b!=null&&b.length>=4&&valid(b[0],b[1])&&valid(b[2],b[3])) {
-            double d=distance(f.playerX,f.playerY,(b[0]+b[2])/2,(b[1]+b[3])/2);if(d<score){score=d;best=b;}
-        }
-        return best;
-    }
     private Decision remember(Decision d){previousCommand=dispatch&&d.direction!=0; if(dispatch&&d.direction!=0)lastDirection=d.direction;return d;}
     private void recordJump(boolean learn) {
         usedJumps++;lastJump=now;

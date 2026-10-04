@@ -15,6 +15,7 @@ import com.google.mlkit.vision.text.*;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import com.corefilter.farmer.engine.FarmEngine;
 import com.corefilter.farmer.engine.ScreenInterpreter;
+import com.corefilter.farmer.maps.MapArchiveStore;
 import com.corefilter.farmer.vision.PixelVision;
 import com.corefilter.farmer.vision.TemporalVision;
 import java.util.*;
@@ -26,6 +27,9 @@ public final class FarmerService extends AccessibilityService {
     static final String GAME="com.Overcurve.Corebound",STORE="com.android.vending";
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    private final ExecutorService mapWriter=Executors.newSingleThreadExecutor();
+    private final ArrayDeque<FarmEngine.RunMap> mapBacklog=new ArrayDeque<>();
+    private boolean mapWriteBusy;
     private final ArrayDeque<String> logs=new ArrayDeque<>();
     private TextRecognizer recognizer;
     private Profile profile;private FarmEngine engine;private WindowManager wm;
@@ -47,7 +51,7 @@ public final class FarmerService extends AccessibilityService {
     @Override protected void onServiceConnected(){instance=this;wm=(WindowManager)getSystemService(WINDOW_SERVICE);compatibilityCapture=getSharedPreferences("capture",0).getBoolean("compatibility",false);recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);reloadProfile();showOverlay();handler.post(ticker);log("Connected. No touches until Run.");}
     @Override public void onAccessibilityEvent(AccessibilityEvent e){}
     @Override public void onInterrupt(){pause("Android interrupted controls");}
-    @Override public void onDestroy(){destroyed=true;pause("Service stopped");handler.removeCallbacksAndMessages(null);hideCalibration();hidePreview();if(bar!=null){wm.removeView(bar);bar=null;}if(recognizer!=null)recognizer.close();worker.shutdownNow();instance=null;super.onDestroy();}
+    @Override public void onDestroy(){destroyed=true;pause("Service stopped");handler.removeCallbacksAndMessages(null);hideCalibration();hidePreview();if(bar!=null){wm.removeView(bar);bar=null;}if(recognizer!=null)recognizer.close();worker.shutdownNow();mapWriter.shutdown();instance=null;super.onDestroy();}
     @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);if(bar!=null){Rect bounds=wm.getMaximumWindowMetrics().getBounds();barParams.x=Math.max(0,Math.min(bounds.width()-barParams.width,barParams.x));barParams.y=Math.max(0,Math.min(bounds.height()-barParams.height,barParams.y));wm.updateViewLayout(bar,barParams);}if(running){generation++;pendingFrames.clear();temporal=new TemporalVision();nextCapture=0;}}
     public void reloadProfile(){profile=Profile.load(this);engine=new FarmEngine(profile.config());pendingFrames.clear();temporal=new TemporalVision();earliestGameplayObservationAt=0;setStatus("Ready · "+profile.name);}
     public void pause(String reason){running=false;observe=false;previewRequested=false;generation++;pendingFrames.clear();if(engine!=null)engine.stop();cancelTouches();log(reason);setStatus("Paused · "+reason);}
@@ -69,11 +73,12 @@ public final class FarmerService extends AccessibilityService {
         menuAction(menu,popup,"Build & Hookshots",()->{pause("Editing build");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("editBuild",true));});
         menuAction(menu,popup,"Calibrate controls",this::calibrate);
         menuAction(menu,popup,"Preview captured game",this::previewCapture);
+        menuAction(menu,popup,"Saved maps & laptop transfer",()->{pause("Opening saved maps");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openMaps",true));});
         menuAction(menu,popup,compatibilityCapture?"Capture: compatibility ✓":"Capture: clean window ✓",()->{pause("Capture mode changed");compatibilityCapture=!compatibilityCapture;getSharedPreferences("capture",0).edit().putBoolean("compatibility",compatibilityCapture).apply();setStatus(compatibilityCapture?"Compatibility capture enabled":"Clean window capture enabled");});
         menuAction(menu,popup,"Stop & hide",()->{pause("Stopped");overlayWanted=false;restoreBar();});popup.showAsDropDown(anchor,-Ui.dp(this,196),Ui.dp(this,4));
     }
     private void menuAction(LinearLayout menu,PopupWindow popup,String label,Runnable action){Button b=Ui.button(this,label,()->{popup.dismiss();handler.postDelayed(action,80);});menu.addView(b,new LinearLayout.LayoutParams(-1,Ui.dp(this,48)));}
-    private void start(boolean dry){if(calibration!=null||preview!=null)return;if(!GAME.equals(foregroundPackage())){setStatus("Open Corebound first");return;}reloadProfile();generation++;engine.reset(SystemClock.elapsedRealtime());running=true;observe=dry;nextCapture=0;lastOcrAt=0;captureErrors=slowFrames=0;log(dry?"Observe: predictions only, no touches":"Run started: "+profile.name);setStatus(dry?"Observing…":"Starting…");}
+    private void start(boolean dry){if(calibration!=null||preview!=null)return;if(!GAME.equals(foregroundPackage())){setStatus("Open Corebound first");return;}reloadProfile();generation++;engine.reset(SystemClock.elapsedRealtime());running=true;observe=dry;nextCapture=0;lastOcrAt=0;captureErrors=slowFrames=0;writeNextMap();log(dry?"Observe: predictions only, no touches":"Run started: "+profile.name);setStatus(dry?"Observing…":"Starting…");}
     private void setStatus(String s){lastReason=s;if(status!=null)status.setText(s);if(runButton!=null)runButton.setText(running?"Pause":"Run");}
     public String statusLine(){return lastReason;}
     private void log(String s){long now=SystemClock.elapsedRealtime();if(!logs.isEmpty()&&logs.peekLast().endsWith(s)&&now-lastLogged<3000)return;lastLogged=now;logs.addLast(android.text.format.DateFormat.format("HH:mm:ss",new java.util.Date())+"  "+s);while(logs.size()>80)logs.removeFirst();getSharedPreferences("session",0).edit().putString("log",logText()).apply();}
@@ -121,15 +126,17 @@ public final class FarmerService extends AccessibilityService {
     private void recognise(Bitmap bitmap,PixelVision.Result vision,String pkg,long capturedAt,int ticket){
         if(ticket!=generation||destroyed){bitmap.recycle();inFlight=false;return;}
         long now=SystemClock.elapsedRealtime();
-        if(vision.gameplay&&(vision.controlsDetected||vision.playerConfidence>.5)&&engine.state()==FarmEngine.State.GAMEPLAY&&now-lastOcrAt<1400){processFrame(vision,pkg,capturedAt,ticket,Collections.emptyList());bitmap.recycle();inFlight=false;return;}
+        if(vision.gameplay&&(vision.controlsDetected||vision.playerConfidence>.5)&&engine.state()==FarmEngine.State.GAMEPLAY&&now-lastOcrAt<900){processFrame(vision,pkg,capturedAt,ticket,Collections.emptyList());bitmap.recycle();inFlight=false;return;}
         lastOcrAt=now;
         // The menu's narrow tier line is the selection failure seen in both trials.
         // Magnify the selected right panel; map all OCR boxes back to the full image.
+        final boolean hudOnly=vision.gameplay&&engine.state()==FarmEngine.State.GAMEPLAY
+                &&(vision.controlsDetected||vision.playerConfidence>.5);
         final int textLeft=vision.selectedPanel?(int)(bitmap.getWidth()*.54):0;
         final int textTop=vision.selectedPanel?(int)(bitmap.getHeight()*.48):0;
-        final int textScale=vision.selectedPanel?2:1;
+        final int textScale=vision.selectedPanel||hudOnly?2:1;
         final Bitmap textImage;
-        if(vision.selectedPanel){Bitmap panel=Bitmap.createBitmap(bitmap,textLeft,textTop,bitmap.getWidth()-textLeft,bitmap.getHeight()-textTop);textImage=Bitmap.createScaledBitmap(panel,panel.getWidth()*textScale,panel.getHeight()*textScale,true);if(panel!=bitmap&&panel!=textImage)panel.recycle();}else textImage=bitmap;
+        if(vision.selectedPanel||hudOnly){int textHeight=hudOnly?Math.max(1,(int)(bitmap.getHeight()*.30)):bitmap.getHeight()-textTop;Bitmap panel=Bitmap.createBitmap(bitmap,textLeft,textTop,bitmap.getWidth()-textLeft,textHeight);textImage=Bitmap.createScaledBitmap(panel,panel.getWidth()*textScale,panel.getHeight()*textScale,true);if(panel!=bitmap&&panel!=textImage)panel.recycle();}else textImage=bitmap;
         recognizer.process(InputImage.fromBitmap(textImage,0)).addOnSuccessListener(text->{
             if(ticket!=generation||!running||destroyed)return;
             List<FarmEngine.Token> tokens=new ArrayList<>();StringBuilder all=new StringBuilder();
@@ -148,9 +155,28 @@ public final class FarmerService extends AccessibilityService {
         if(vision.gameplay&&capturedAt<earliestGameplayObservationAt){nextCapture=0;return;}
         if(SystemClock.elapsedRealtime()-capturedAt>1400){if(++slowFrames>=4)pause("Screen analysis too slow; resume to retry");else{nextCapture=0;setStatus("Refreshing screen…");}return;}slowFrames=0;
         FarmEngine.Frame f=ScreenInterpreter.interpret(SystemClock.elapsedRealtime(),capturedAt,pkg,tokens,vision);
+        f.viewportAspectRatio=screenH>0?screenW/(double)screenH:Double.NaN;
         FarmEngine.Action action=observe?engine.observe(f):engine.next(f);setStatus((observe?"Observe · ":"")+engine.runs()+" runs · "+action.reason);log((observe?"Would ":"")+action.kind+": "+action.reason);
+        if(engine.takeRunStartRequest()){
+            temporal=new TemporalVision();pendingFrames.clear();earliestGameplayObservationAt=0;
+        }
+        FarmEngine.RunMap finished;while((finished=engine.takeFinishedMap())!=null)mapBacklog.addLast(finished);
+        writeNextMap();
         if(action.kind==FarmEngine.Kind.PAUSE&&vision.selectedPanel)log("Selection OCR: "+f.text.replace('\n',' '));
         if(observe){nextCapture=SystemClock.elapsedRealtime()+350;return;}execute(action,vision,pkg,ticket);
+    }
+    private void writeNextMap(){
+        if(mapWriteBusy||mapBacklog.isEmpty()||destroyed)return;
+        final FarmEngine.RunMap report=mapBacklog.peekFirst();mapWriteBusy=true;
+        final Context storageContext=getApplicationContext();
+        mapWriter.execute(()->{
+            try{
+                MapArchiveStore.save(storageContext,report.snapshot,report.outcome,report.runNumber);
+                handler.post(()->{mapBacklog.remove(report);mapWriteBusy=false;if(!destroyed){log("Run map saved privately · use Saved maps to transfer");writeNextMap();}});
+            }catch(Exception ex){
+                handler.post(()->{mapWriteBusy=false;if(!destroyed)pause("Could not save the run map · check phone storage, then Run to retry");});
+            }
+        });
     }
     private void collectNodes(List<FarmEngine.Token> tokens,StringBuilder text){AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return;try{if(!GAME.contentEquals(root.getPackageName()==null?"":root.getPackageName()))return;ArrayDeque<AccessibilityNodeInfo> queue=new ArrayDeque<>();queue.add(AccessibilityNodeInfo.obtain(root));int count=0;while(!queue.isEmpty()&&count++<180){AccessibilityNodeInfo n=queue.remove();CharSequence label=n.getText()!=null?n.getText():n.getContentDescription();if(label!=null&&n.isVisibleToUser()){String s=label.toString();Rect r=new Rect();n.getBoundsInScreen(r);if(!r.isEmpty()&&screenW>0){tokens.add(new FarmEngine.Token(s,r.left/(double)screenW,r.top/(double)screenH,r.right/(double)screenW,r.bottom/(double)screenH));text.append(s).append('\n');}}for(int i=0;i<n.getChildCount();i++){AccessibilityNodeInfo child=n.getChild(i);if(child!=null)queue.add(child);}n.recycle();}while(!queue.isEmpty())queue.remove().recycle();}finally{root.recycle();}}
 

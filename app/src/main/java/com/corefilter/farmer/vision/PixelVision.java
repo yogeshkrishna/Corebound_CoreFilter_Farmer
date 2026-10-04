@@ -20,14 +20,20 @@ public final class PixelVision {
         public double playerLeft=-1, playerTop=-1, playerRight=-1, playerBottom=-1;
         /** Nearby horizontal terrain at the visible crawler's feet/head. Confirm over time. */
         public boolean grounded, ceilingReached;
+        /** Weak foot-colour evidence under effects. TemporalVision must confirm
+         * a stable registered support before this can replenish any jumps. */
+        public boolean groundContactCandidate;
         public boolean wallLeft, wallRight;
         /** Conservative foreground occupancy. Unknown observations never erase the map. */
         public int terrainCols=48, terrainRows=24;
         public byte[] terrainCells=new byte[48*24];
+        /** Internal registration support sampled from verified rectangular foreground only.
+         * It is deliberately separate from free/dark pixels and from map occupancy. */
+        final boolean[] registrationForeground=new boolean[120*56];
         /** Camera translation belongs to TemporalVision, not brightness signatures. */
         public double cameraDx, cameraDy, cameraX, cameraY, cameraConfidence;
         public int registrationEpoch;
-        public boolean registrationReset, sceneChanged;
+        public boolean registrationReset, registrationLost, sceneChanged;
         /** Pink enemy-body candidates [left,top,right,bottom,burningConfidence,dreadnoughtConfidence].
          * Appearance alone does not identify a Spectrum or prove a kill. */
         public double[][] enemyBoxes = new double[0][];
@@ -82,9 +88,10 @@ public final class PixelVision {
         if (result.gameplay) {
             locatePlayer(p, w, h, result);
             locateGate(p, w, h, result);
-            locateTerrainContacts(p, w, h, result);
+            refinePlayerBounds(p, w, h, result);
             locateEnemies(p, w, h, result);
-            locateTerrain(p,w,h,result);
+            TerrainEvidence terrain=locateTerrain(p,w,h,result);
+            locateTerrainContacts(terrain,w,h,result);
         } else {
             locatePlayPanel(p, w, h, result);
             locateFilters(p, w, h, result);
@@ -227,7 +234,7 @@ public final class PixelVision {
         }
     }
 
-    private static void locateTerrainContacts(int[] p, int w, int h, Result result) {
+    private static void refinePlayerBounds(int[] p, int w, int h, Result result) {
         if (result.playerConfidence < .50) return;
         int cx=(int)(result.playerX*w), cy=(int)(result.playerY*h);
         int radius=Math.max(4,(int)(h*.075));
@@ -244,24 +251,6 @@ public final class PixelVision {
         if(count<h*h*.0015 || maxX-minX<h*.06 || maxY-minY<h*.06)return;
         result.playerLeft=minX/(double)w;result.playerRight=(maxX+1.)/w;
         result.playerTop=minY/(double)h;result.playerBottom=(maxY+1.)/h;
-        int gap=Math.max(2,(int)(h*.018));
-        // The crawler has two feet separated by an empty centre. Narrow centre-only
-        // checks miss landings on the level's split/slotted platform tiles.
-        result.grounded=horizontalTerrain(p,w,h,minX+1,maxX-1,maxY+1,maxY+gap+1,false);
-        result.ceilingReached=horizontalTerrain(p,w,h,minX+1,maxX-1,minY-gap,minY,true);
-        result.wallLeft=verticalTerrain(p,w,h,minX-gap,minX,minY+2,maxY-2);
-        result.wallRight=verticalTerrain(p,w,h,maxX+1,maxX+gap+1,minY+2,maxY-2);
-    }
-
-    private static boolean verticalTerrain(int[] p,int w,int h,int left,int right,int top,int bottom) {
-        top=Math.max(1,top);bottom=Math.min(h-1,bottom);
-        if(bottom-top<5)return false;
-        int adjacent=0;
-        for(int x=Math.max(1,left);x<Math.min(w-1,right);x++) {
-            int count=0;for(int y=top;y<bottom;y++)if(terrainGrey(p[y*w+x]))count++;
-            if(count>(bottom-top)*.58){if(++adjacent>=2)return true;}else adjacent=0;
-        }
-        return false;
     }
 
     private static boolean terrainGrey(int c) {
@@ -275,45 +264,181 @@ public final class PixelVision {
                 y>result.playerTop-.018&&y<result.playerBottom+.018);
     }
 
-    private static void locateTerrain(int[] p,int w,int h,Result result) {
+    private static final class TerrainEvidence {
+        final boolean[] solid,contactCandidate;
+        TerrainEvidence(int size){solid=new boolean[size];contactCandidate=new boolean[size];}
+    }
+
+    private static boolean darkFree(int c) {
+        int r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+        return Math.max(r,Math.max(g,b))<37&&Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<25;
+    }
+
+    private static boolean boundaryFree(int c) {
+        // Ember and other effects illuminate the cavity around a tile. Dim
+        // coloured light is free boundary evidence; neutral rock is not.
+        int r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
+        return darkFree(c)||(!terrainGrey(c)&&Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))>16);
+    }
+
+    private static boolean geometryMasked(double x,double y,Result r) {
+        // A picture edge has no observed free side and must never become a wall.
+        if(x<.018||x>.982||y<.14||y>.87||(x<.40&&y>.69))return true;
+        if(r.playerConfidence>.35&&x>r.playerLeft&&x<r.playerRight&&y>r.playerTop&&y<r.playerBottom)return true;
+        for(double[] b:r.enemyBoxes)if(x>b[0]&&x<b[2]&&y>b[1]&&y<b[3])return true;
+        return false;
+    }
+
+    /** Grey colour is merely a candidate. A component must present long, flat
+     * axis-aligned edges with a dark free side, and most of its exposed silhouette
+     * must consist of those runs. Jagged/triangular decorations fail that ratio.
+     * Two-pixel platforms can pass because their two long faces remain rectangles.
+     */
+    private static TerrainEvidence locateTerrain(int[] p,int w,int h,Result result) {
+        TerrainEvidence evidence=new TerrainEvidence(p.length);
+        boolean[] candidate=new boolean[p.length];int[] ids=new int[p.length],queue=new int[p.length];
+        for(int y=0;y<h;y++)for(int x=0;x<w;x++)
+            candidate[y*w+x]=!geometryMasked((x+.5)/w,(y+.5)/h,result)&&terrainGrey(p[y*w+x]);
+        // Tile texture can contain tiny dark holes. Close only holes supported
+        // on both opposite axes; do not flatten a jagged external silhouette.
+        boolean[] original=candidate.clone();
+        for(int y=2;y<h-2;y++)for(int x=2;x<w-2;x++)if(!original[y*w+x]&&!geometryMasked((x+.5)/w,(y+.5)/h,result)) {
+            boolean lr=(original[y*w+x-1]||original[y*w+x-2])&&(original[y*w+x+1]||original[y*w+x+2]);
+            boolean ud=(original[(y-1)*w+x]||original[(y-2)*w+x])&&(original[(y+1)*w+x]||original[(y+2)*w+x]);
+            if(lr&&ud)candidate[y*w+x]=true;
+        }
+        System.arraycopy(candidate,0,evidence.contactCandidate,0,candidate.length);
+        int id=0,minRun=Math.max(7,(int)Math.ceil(h*.035));
+        for(int sy=1;sy<h-1;sy++)for(int sx=1;sx<w-1;sx++) {
+            int start=sy*w+sx;if(!candidate[start]||ids[start]!=0)continue;
+            id++;int head=0,tail=1,minX=sx,maxX=sx,minY=sy,maxY=sy;queue[0]=start;ids[start]=id;
+            while(head<tail) {
+                int at=queue[head++],x=at%w,y=at/w;
+                minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+                for(int k=0;k<4;k++) {
+                    int d=k==0?-1:k==1?1:k==2?-w:w;
+                    int n=at+d;if(n<0||n>=p.length||Math.abs(n%w-x)>1||!candidate[n]||ids[n]!=0)continue;
+                    ids[n]=id;queue[tail++]=n;
+                }
+            }
+            if(tail<minRun*2||Math.max(maxX-minX+1,maxY-minY+1)<minRun)continue;
+            boolean[] exterior=exterior(ids,id,w,h,minX,maxX,minY,maxY);
+            int exposed=0,verified=0,horizontal=0,vertical=0,longestVertical=0,faceSupport=0,faceX=0,faceSide=0;
+            int[][] verticalSupport=new int[2][maxX-minX+1];
+            // Exposed edges adjoining dark pixels include diagonal tooth steps, so
+            // many tiny orthogonal raster segments cannot masquerade as a rectangle.
+            for(int i=0;i<tail;i++) {
+                int at=queue[i],x=at%w,y=at/w;
+                if(x>0&&exterior[at-1]&&boundaryFree(p[at-1]))exposed++;
+                if(x<w-1&&exterior[at+1]&&boundaryFree(p[at+1]))exposed++;
+                if(y>0&&exterior[at-w]&&boundaryFree(p[at-w]))exposed++;
+                if(y<h-1&&exterior[at+w]&&boundaryFree(p[at+w]))exposed++;
+            }
+            for(int side:new int[]{-1,1}) {
+                for(int y=minY;y<=maxY;y++) {
+                    int run=0;
+                    for(int x=minX;x<=maxX+1;x++) {
+                        boolean edge=x<=maxX&&y+side>=0&&y+side<h&&exterior[(y+side)*w+x]&&flatEdge(p,ids,id,w,h,x,y,0,side);
+                        if(edge)run++;
+                        else {if(run>=minRun){verified+=run;horizontal+=run;}run=0;}
+                    }
+                }
+                for(int x=minX;x<=maxX;x++) {
+                    int run=0,support=0,longest=0;
+                    for(int y=minY;y<=maxY+1;y++) {
+                        boolean edge=y<=maxY&&x+side>=0&&x+side<w&&exterior[y*w+x+side]&&flatEdge(p,ids,id,w,h,x,y,side,0);
+                        if(edge)run++;
+                        else {if(run>=minRun){verified+=run;vertical+=run;support+=run;longest=Math.max(longest,run);}run=0;}
+                    }
+                    verticalSupport[(side+1)/2][x-minX]=support;
+                    if(support>faceSupport){faceSupport=support;longestVertical=longest;faceX=x;faceSide=side;}
+                }
+            }
+            int bw=maxX-minX+1,bh=maxY-minY+1;
+            // A tall wall clipped by the HUD can expose only one straight face.
+            // Texture/shadow on its far side need not form a second silhouette.
+            // Keep only the rock behind that measured face, never the coloured
+            // halo in front. Short/jagged decorative strips cannot use this path.
+            int nearbyFaceSupport=faceSupport;
+            for(int dx:new int[]{-1,1})if(faceX+dx>=minX&&faceX+dx<=maxX)
+                nearbyFaceSupport+=verticalSupport[(faceSide+1)/2][faceX+dx-minX];
+            boolean tallFace=bh>=h*.4&&bw>=Math.max(h*.04,w*.025)&&bw<bh*.25&&longestVertical>=minRun*2&&faceSupport>=bh*.25&&nearbyFaceSupport>=bh*.45&&
+                    (minY<=h*.14+1||maxY>=h*.87-1)&&vertical>horizontal*2;
+            boolean orthogonalFaces=(horizontal>=minRun*3&&vertical>=minRun||vertical>=minRun*3&&horizontal>=minRun)&&verified>=exposed*.24;
+            if(exposed<minRun*2||verified<minRun*2||(verified<exposed*.69&&!tallFace&&!orthogonalFaces))continue;
+            // A one-sided jagged strip with only a flat base is decoration. A thin
+            // real platform needs both long faces; a staircase needs both axes.
+            boolean clippedHorizontal=horizontal>=minRun&&bh>=h*.04&&(minY<=h*.14+1||maxY>=h*.87-1);
+            boolean clippedVertical=vertical>=minRun&&bw>=Math.max(h*.04,w*.035)&&(minX<=w*.018+1||maxX>=w*.982-1);
+            if((horizontal<minRun||vertical<minRun)&&verified<2*Math.max(bw,bh)*.72&&!clippedHorizontal&&!clippedVertical&&!tallFace)continue;
+            for(int i=0;i<tail;i++)if(!tallFace||(queue[i]%w-faceX)*faceSide<=0)evidence.solid[queue[i]]=true;
+        }
         for(int gy=0;gy<result.terrainRows;gy++)for(int gx=0;gx<result.terrainCols;gx++) {
             double nx=(gx+.5)/result.terrainCols,ny=(gy+.5)/result.terrainRows;
             if(masked(nx,ny,result))continue;
             int x0=gx*w/result.terrainCols,x1=(gx+1)*w/result.terrainCols;
             int y0=gy*h/result.terrainRows,y1=(gy+1)*h/result.terrainRows;
-            int solid=0,neutral=0,bright=0,total=0,straightRow=0,straightColumn=0;
+            int solid=0,free=0,total=0,longestRow=0,longestColumn=0;
             for(int y=y0;y<y1;y++) {
-                int row=0;
+                int run=0;
                 for(int x=x0;x<x1;x++) {
-                    int c=p[y*w+x],r=(c>>>16)&255,g=(c>>>8)&255,b=c&255;
-                    total++;if(terrainGrey(c)){solid++;row++;}
-                    if(Math.max(r,Math.max(g,b))-Math.min(r,Math.min(g,b))<28)neutral++;
-                    if(Math.max(r,Math.max(g,b))>85)bright++;
+                    total++;
+                    if(evidence.solid[y*w+x]){solid++;longestRow=Math.max(longestRow,++run);}else run=0;
+                    if(darkFree(p[y*w+x]))free++;
                 }
-                if(row>=(x1-x0)*.7)straightRow++;
             }
-            for(int x=x0;x<x1;x++){int column=0;for(int y=y0;y<y1;y++)if(terrainGrey(p[y*w+x]))column++;if(column>=(y1-y0)*.7)straightColumn++;}
-            // Foreground rock has broad grey texture or a straight visible rim. Its
-            // black interior is not filled in from brightness; the planner also
-            // learns confirmed collisions and keeps observations across views.
-            if(solid>total*.30||straightRow>=2||straightColumn>=2)result.terrainCells[gy*result.terrainCols+gx]=2;
-            else if(solid<total*.045&&neutral>total*.72&&bright<total*.06)result.terrainCells[gy*result.terrainCols+gx]=1;
+            for(int x=x0;x<x1;x++){int run=0;for(int y=y0;y<y1;y++){if(evidence.solid[y*w+x])longestColumn=Math.max(longestColumn,++run);else run=0;}}
+            if(solid>=Math.max(2,total*.15)&&(longestRow>=(x1-x0)*.55||longestColumn>=(y1-y0)*.55))result.terrainCells[gy*result.terrainCols+gx]=2;
+            else if(free>total*.94)result.terrainCells[gy*result.terrainCols+gx]=1;
         }
+        for(int y=0;y<56;y++)for(int x=0;x<120;x++) {
+            int px=Math.min(w-1,(int)((x+.5)*w/120)),py=Math.min(h-1,(int)((y+.5)*h/56));
+            result.registrationForeground[y*120+x]=evidence.solid[py*w+px];
+        }
+        return evidence;
+    }
+    private static boolean[] exterior(int[] ids,int id,int w,int h,int minX,int maxX,int minY,int maxY) {
+        int l=Math.max(0,minX-1),r=Math.min(w-1,maxX+1),t=Math.max(0,minY-1),b=Math.min(h-1,maxY+1);
+        boolean[] outside=new boolean[ids.length];int[] q=new int[(r-l+1)*(b-t+1)];int head=0,tail=0;
+        for(int yy=t;yy<=b;yy++)for(int xx=l;xx<=r;xx++)if((yy==t||yy==b||xx==l||xx==r)&&ids[yy*w+xx]!=id){outside[yy*w+xx]=true;q[tail++]=yy*w+xx;}
+        while(head<tail){int at=q[head++],xx=at%w,yy=at/w;for(int k=0;k<4;k++){
+            int nx=xx+(k==0?-1:k==1?1:0),ny=yy+(k==2?-1:k==3?1:0);if(nx<l||nx>r||ny<t||ny>b)continue;
+            int n=ny*w+nx;if(!outside[n]&&ids[n]!=id){outside[n]=true;q[tail++]=n;}
+        }}return outside;
     }
 
-    private static boolean horizontalTerrain(int[] p,int w,int h,int left,int right,int top,int bottom,boolean ceiling) {
-        left=Math.max(0,left);right=Math.min(w-1,right);
+    private static boolean flatEdge(int[] p,int[] ids,int id,int w,int h,int x,int y,int dx,int dy) {
+        if(ids[y*w+x]!=id)return false;
+        int outsideX=x+dx*2,outsideY=y+dy*2,insideX=x-dx,insideY=y-dy;
+        if(outsideX<1||outsideX>=w-1||outsideY<1||outsideY>=h-1||insideX<0||insideX>=w||insideY<0||insideY>=h)return false;
+        return ids[insideY*w+insideX]==id&&boundaryFree(p[(y+dy)*w+x+dx])&&boundaryFree(p[outsideY*w+outsideX]);
+    }
+
+    private static void locateTerrainContacts(TerrainEvidence e,int w,int h,Result r) {
+        if(r.playerConfidence<.50)return;
+        int left=Math.max(1,(int)(r.playerLeft*w)),right=Math.min(w-2,(int)(r.playerRight*w)-1);
+        int top=Math.max(1,(int)(r.playerTop*h)),bottom=Math.min(h-2,(int)(r.playerBottom*h)-1);
+        int gap=Math.max(2,(int)(h*.018));
+        r.grounded=horizontalContact(e.solid,w,h,left+1,right-1,bottom+1,bottom+gap+1,.50);
+        r.groundContactCandidate=r.grounded||horizontalContact(e.contactCandidate,w,h,left+1,right-1,bottom+1,bottom+gap+1,.50);
+        r.ceilingReached=horizontalContact(e.solid,w,h,left+1,right-1,top-gap,top,.65);
+        r.wallLeft=verticalContact(e.solid,w,h,left-gap,left,top+2,bottom-2);
+        r.wallRight=verticalContact(e.solid,w,h,right+1,right+gap+1,top+2,bottom-2);
+    }
+
+    private static boolean horizontalContact(boolean[] solid,int w,int h,int left,int right,int top,int bottom,double coverage) {
         if(right-left<4)return false;
-        int adjacentRows=0;
         for(int y=Math.max(1,top);y<Math.min(h-1,bottom);y++) {
-            int matched=0, longest=0, run=0;
-            for(int x=left;x<=right;x++) {
-                if(grey(p[y*w+x])) {matched++;longest=Math.max(longest,++run);} else run=0;
-            }
-            double coverage=ceiling?.72:.60, uninterrupted=ceiling?.5:.30;
-            if(matched>=(right-left+1)*coverage && longest>=(right-left+1)*uninterrupted) {
-                if(++adjacentRows>=2)return true;
-            } else adjacentRows=0;
+            int count=0;for(int x=Math.max(1,left);x<=Math.min(w-2,right);x++)if(solid[y*w+x])count++;
+            if(count>=(right-left+1)*coverage)return true;
+        }
+        return false;
+    }
+    private static boolean verticalContact(boolean[] solid,int w,int h,int left,int right,int top,int bottom) {
+        if(bottom-top<5)return false;
+        for(int x=Math.max(2,left);x<Math.min(w-2,right);x++) {
+            int count=0;for(int y=Math.max(1,top);y<Math.min(h-1,bottom);y++)if(solid[y*w+x])count++;
+            if(count>=(bottom-top)*.65)return true;
         }
         return false;
     }

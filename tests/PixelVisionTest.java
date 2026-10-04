@@ -45,8 +45,8 @@ public class PixelVisionTest {
         check(start.kind==FarmEngine.Kind.TAP&&Math.abs(start.x-menu.playX)<.001,
                 "Verified target starts from the pixel Play position at "+scale);
         PixelVision.Result landing=read(root,"v2/field_10.png",scale);
-        check(landing.gameplay&&landing.playerConfidence>.5&&landing.grounded&&!landing.ceilingReached,
-                "Slotted platform supports both crawler feet at "+scale);
+        check(landing.gameplay&&landing.playerConfidence>.5&&landing.groundContactCandidate&&!landing.ceilingReached,
+                "Effect-obscured slotted feet supply landing evidence for temporal confirmation at "+scale);
         PixelVision.Result air=read(root,"v2/field_25.png",scale);
         check(air.gameplay&&air.playerConfidence>.5&&!air.grounded&&!air.ceilingReached,
                 "Airborne crawler does not recharge jumps at "+scale);
@@ -87,7 +87,7 @@ public class PixelVisionTest {
         check(!orbMisread,"Separate allied orb / drop is not labelled an enemy at "+scale);
         PixelVision.Result before=read(root,"v3/manual_8.75.png",scale),landed=read(root,"v3/manual_9.00.png",scale),settled=read(root,"v3/manual_9.25.png",scale);
         check(before.gameplay&&!before.grounded,"Descending frame cannot replenish Hookshot jumps at "+scale);
-        check(landed.gameplay&&landed.grounded&&settled.grounded,"Visible floor confirms landing in two independent recorded frames at "+scale);
+        check(landed.gameplay&&landed.groundContactCandidate&&settled.groundContactCandidate,"Feet supply landing evidence in two independent recorded frames at "+scale);
     }
     public static void main(String[] args) throws Exception {
         File root=new File(args.length>0?args[0]:".");

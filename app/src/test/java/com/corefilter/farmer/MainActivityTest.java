@@ -44,6 +44,7 @@ public class MainActivityTest {
             assertTrue(visibleText.contains("Enable controls"));
             assertTrue(visibleText.contains("Edit build & farming settings"));
             assertTrue(visibleText.contains("Check for updates"));
+            assertTrue(visibleText.contains("Saved maps & Wi-Fi transfer"));
             assertTrue(visibleText.contains("3 hookshots · 7 jumps"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("dashboard-insets"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("check-updates"));
@@ -56,7 +57,7 @@ public class MainActivityTest {
             int width=Ui.dp(activity,360),height=Ui.dp(activity,800);
             dashboard.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
             dashboard.layout(0,0,width,height);
-            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates"}){
+            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates","saved-maps"}){
                 View action=dashboard.findViewWithTag(key);Rect rect=new Rect(0,0,action.getWidth(),action.getHeight());
                 dashboard.offsetDescendantRectToMyCoords(action,rect);
                 assertTrue(key+" clips left",rect.left>=0);assertTrue(key+" clips right",rect.right<=width);
@@ -152,7 +153,7 @@ public class MainActivityTest {
         assertEquals(420,upgraded.moveMs);assertEquals(180,upgraded.settleMs);
         assertEquals(3,upgraded.hookshotCount);assertEquals(7,upgraded.totalJumpBudget());assertTrue(upgraded.continuousFarm);
         assertEquals("My custom equipment",upgraded.notes);assertEquals(.93f,upgraded.jumpX,.0001f);assertFalse(upgraded.watchFilterAds);
-        assertEquals(3,context.getSharedPreferences("profile",0).getInt("schemaVersion",0));
+        assertEquals(4,context.getSharedPreferences("profile",0).getInt("schemaVersion",0));
     }
 
     @Test public void currentCustomTimingsSurviveAndUnsafeHoldIsCapped() {
@@ -167,7 +168,7 @@ public class MainActivityTest {
         Context context=RuntimeEnvironment.getApplication();
         context.getSharedPreferences("profile",0).edit().putInt("schemaVersion",2).putInt("jumpSpacingMs",190)
                 .putInt("moveMs",600).putString("weapons","My Ember").putFloat("leftX",.12f).commit();
-        Profile p=Profile.load(context);assertEquals(500,p.jumpSpacingMs);assertEquals(600,p.moveMs);
+        Profile p=Profile.load(context);assertEquals(350,p.jumpSpacingMs);assertEquals(600,p.moveMs);
         assertEquals("My Ember",p.weapons);assertEquals(.12f,p.leftX,.0001f);
         p.jumpSpacingMs=900;p.save(context);assertEquals(900,Profile.load(context).jumpSpacingMs);
     }

@@ -4,18 +4,18 @@ A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, 
 
 **[Download the latest APK](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** · Android 11 or later
 
-Version 0.3.0 replaces timed sweeps with a persistent terrain map and enemy planner, based on the latest phone trial and manual Hookshot demonstration. Validation uses recorded frames, temporal navigation regressions and simulated Android checks. Updated navigation still needs a phone trial; full ceiling coverage and a maximum filters-per-hour rate are not established.
+Version 0.4.0 replaces the flying grid planner with a corridor controller. Normal traversal moves and jumps forward; extra Hookshots scout only upper areas that normal traversal cannot reveal. Rectangular terrain, downward turns, missed enemies and observed ceiling coverage have separate records. Each finished run saves a map picture and raw data for verified transfer to a laptop on the same Wi-Fi. This update still needs a phone trial; complete live coverage and a maximum filters-per-hour rate are not established.
 
 ## Install this update
 
-1. If version 0.2.0 is installed, use **Check for updates → Download & install**, then confirm **Install**. Otherwise download **Ceiling-Scout.apk** from the latest release and open it with Android's Package Installer. **Do not uninstall first:** your build and calibration will stay saved.
+1. In your existing app use **Check for updates → Download & install**, then confirm **Install**. For a first installation, download **Ceiling-Scout.apk** from the latest release and open it with Android's Package Installer. **Do not uninstall first:** your build and calibration will stay saved.
 2. Open Ceiling Scout. If controls are disconnected, use **Enable controls** and enable **Ceiling Scout controls** in Accessibility settings. For a sideloaded app Android may first require **App info → menu → Allow restricted settings**; wording varies by phone.
 3. Tap **Show floating bar**, then **Open Corebound**. Select Lost Scrapyard with Frozen ★5. Starting inside gameplay assumes you selected that level yourself.
 4. The small bar has **Run/Pause** and **•••**. The menu contains Build, Observe, Calibrate, captured-game preview, capture mode, and Stop & hide.
 5. If needed, enter gameplay and choose **••• → Calibrate controls**. Tap the left button, right button, then jump area on the frozen image. These taps do not touch the game. Saved calibration turns off automatic movement-button location.
 6. Press **Run** and supervise the first runs. Use **Edit build & farming settings** when your equipment changes.
 
-The default is **three Magmatic ★7+ Hookshots: one base jump plus six extra jumps**. Hookshot count and any other extra jumps are editable. The app issues one press/release jump at a time, checks motion and overhead clearance before another impulse, and refills the budget after visible airtime followed by confirmed ground contact. The minimum jump interval defaults to 500 ms; older rapid-batch settings migrate while build notes and calibration remain saved.
+The default is **three Magmatic ★7+ Hookshots: one base jump plus six extra jumps**. Hookshot count and any other extra jumps are editable. The app issues one press/release jump at a time, checks motion and overhead clearance before another impulse, and refills the budget after confirmed landing. The minimum jump interval defaults to 350 ms; actual impulses depend on fresh observations and trajectory clearance. Build notes and calibration remain saved.
 
 ## Updates from the phone
 
@@ -34,7 +34,13 @@ If updating from 0.2.0 after the repository rename, choose **Update source**, en
 - **Capture mode:** Android 14+ normally captures the game window without the bar. Older Android versions, or compatibility mode, briefly hide the bar before display capture. Detected overlay contamination switches to compatibility capture.
 - **Stop & hide:** stops farming and removes the bar. Reopen it from the home screen. Drag its status text to move it.
 
-The navigator maps observed free space and solid terrain, registers camera movement, remembers ceiling sections and enemy positions, and chooses routes with clearance. It stops jumping near the roof, changes route at blocked walls, and lands when Hookshots are spent. Missed targets remain in memory as they scroll off-screen. Ember contact starts a burn attempt; several clear observations after burn time are required before retiring the target. Closed gates keep the room search active. See [controller details](docs/navigation.md).
+The navigator enters the corridor before selecting backward targets, jump-moves through visible areas, and uses additional height only for hidden roofs. Ceiling inspection is based on a clear view of its underside rather than proximity. Downward passages and real enclosing walls establish corridor turns; screen edges do not. Ember contact starts a burn attempt, with unresolved targets retained for a deliberate return sweep. A readable remaining-enemy count helps direct that sweep; a visible gate does not start an animation wait. See [controller details](docs/navigation.md).
+
+## Saved maps on your laptop
+
+After runs, open **Saved maps & Wi-Fi transfer → Start Wi-Fi transfer** and keep that page open. Connect the laptop to the same Wi-Fi and open the displayed link. The laptop page provides a receiver for Windows and previews of saved maps. The receiver saves each ZIP, verifies its checksum, and acknowledges it before the app deletes that exact phone copy. Failed or interrupted transfers keep the phone files.
+
+Each ZIP contains **map.png** and **map.json**: observed floor, ceiling and wall boundaries, the traversed path, ceiling inspection, enemy observations, coordinate units, confidence and build settings. Unknown areas remain blank. Camera gaps that cannot be linked appear in separate panels. These records support future investigation of a fixed layout pool; the current controller does not assume one or reuse an unverified layout. See [transfer steps](docs/map-export.md).
 
 Results are recognized before animation-speed taps. Continue and crate Close are followed by another verified Play on the selected target. A bare Play button cannot authorize a different level. Session/run-count caps are optional; per-run, capture, unknown-screen and stuck-recovery watchdogs remain active.
 
@@ -42,13 +48,13 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 ## Limits
 
-The map is built from partial screen observations; the app does not know the whole randomized level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing.
+The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [video findings](docs/video-analysis.md), [research](docs/research.md), and [verification](docs/verification.md).
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.0.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 
-OCR is bundled and runs on the phone. Game screenshots are processed in memory and are not uploaded or saved by the app. Build settings and a bounded decision log stay in app-private storage. Update requests and APK downloads use GitHub. Google's OCR SDK can also collect diagnostic device, app and performance metrics, as described in its [ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure). Installation uses Android's installer and its confirmation screen. No account login or token is stored in the Android app.
+OCR is bundled and runs on the phone. Game screenshots are processed in memory. Derived maps, observations, build settings and a bounded decision log stay in app-private storage. Maps are shared only through the local transfer you start; a verified receipt removes the transferred phone bundle. They are not uploaded to GitHub. Update requests and APK downloads use GitHub. Google's OCR SDK can also collect diagnostic device, app and performance metrics, as described in its [ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure). Installation uses Android's installer and its confirmation screen. No account login or GitHub token is stored in the Android app.
 
 ## Build and publish
 

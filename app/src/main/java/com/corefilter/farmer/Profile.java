@@ -6,10 +6,10 @@ import com.corefilter.farmer.engine.FarmEngine;
 
 /** Build notes remain descriptive; jump equipment explicitly controls the navigation budget. */
 public final class Profile {
-    private static final int SCHEMA_VERSION=3;
+    private static final int SCHEMA_VERSION=4;
     public String name="Frozen 5 · Gilded Ember", hull="Current crawler", weapons="Ember (Gilded)", notes="Screenshot before gilding: 411k HP, speed 8, 81.9k DPS. Recheck current stats in game.";
     public int moveMs=420, jumpMs=70, jumpEveryMs=1300, settleMs=180, maxRunSeconds=180, maxSessionMinutes=30;
-    public int hookshotCount=3, extraJumps=0, jumpSpacingMs=500;
+    public int hookshotCount=3, extraJumps=0, jumpSpacingMs=350;
     public boolean continuousFarm=true, watchFilterAds=true, autoControls=true;
     public float leftX=.166f,leftY=.81f,rightX=.282f,rightY=.81f,jumpX=.84f,jumpY=.55f;
 
@@ -27,10 +27,11 @@ public final class Profile {
         p.jumpMs=s.getInt("jumpMs",p.jumpMs);p.jumpEveryMs=s.getInt("jumpEveryMs",p.jumpEveryMs);
         p.maxRunSeconds=s.getInt("maxRunSeconds",p.maxRunSeconds);p.maxSessionMinutes=s.getInt("maxSessionMinutes",p.maxSessionMinutes);
         p.hookshotCount=s.getInt("hookshotCount",p.hookshotCount);p.extraJumps=s.getInt("extraJumps",p.extraJumps);p.jumpSpacingMs=s.getInt("jumpSpacingMs",p.jumpSpacingMs);
-        // The recorded jumps crest after about 300 ms. A rapid tap batch wastes
-        // charges before the controller has a new observation; retain longer timings.
+        // Old rapid batches migrate to one impulse per observed response. The
+        // controller now gates on velocity/clearance rather than a fixed crest wait.
         if(schema<3&&p.jumpSpacingMs==190)p.jumpSpacingMs=500;
-        p.jumpSpacingMs=Math.max(450,Math.min(1200,p.jumpSpacingMs));
+        if(schema<4&&p.jumpSpacingMs==500)p.jumpSpacingMs=350;
+        p.jumpSpacingMs=Math.max(250,Math.min(1200,p.jumpSpacingMs));
         p.continuousFarm=s.getBoolean("continuousFarm",true);p.watchFilterAds=s.getBoolean("watchFilterAds",true);p.autoControls=s.getBoolean("autoControls",true);
         p.leftX=s.getFloat("leftX",p.leftX);p.leftY=s.getFloat("leftY",p.leftY);p.rightX=s.getFloat("rightX",p.rightX);p.rightY=s.getFloat("rightY",p.rightY);p.jumpX=s.getFloat("jumpX",p.jumpX);p.jumpY=s.getFloat("jumpY",p.jumpY);
         if(old)p.save(c);

@@ -1,4 +1,4 @@
-CEILING SCOUT 0.3.0 — PHONE UPDATE
+CEILING SCOUT 0.4.0 — PHONE UPDATE
 
 1. In your existing Ceiling Scout app, tap Check for updates > Download & install.
    Version 0.2.0 after the repository rename: choose Update source, enter
@@ -26,4 +26,13 @@ Stop & hide ends the session. Reopen the bar from the app.
 Supervise the first updated runs. The changes pass recorded-frame and logic checks;
 they still need a phone trial. Unknown ads or ambiguous filter offers may pause.
 
-See README.md and docs/verification.md for details.
+SAVED MAPS ON YOUR LAPTOP
+After a cleared or failed run, open Saved maps & Wi-Fi transfer > Start Wi-Fi transfer.
+Connect the laptop to the same Wi-Fi and open the link shown on the phone.
+Keep the phone's map page open. Download the receiver from the laptop page and run it
+as described there. It saves ZIPs in Documents\Ceiling Scout Maps, verifies them,
+then removes only the corresponding verified phone copies.
+Each ZIP includes map.png (picture) and map.json (raw observations/build/confidence).
+Unknown areas remain blank. Fixed-pool identification is for a future iteration.
+
+See README.md, docs/map-export.md and docs/verification-0.4.0.md for details.

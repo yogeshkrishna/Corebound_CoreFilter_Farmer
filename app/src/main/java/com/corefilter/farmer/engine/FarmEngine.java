@@ -1,6 +1,7 @@
 package com.corefilter.farmer.engine;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -34,10 +35,15 @@ public final class FarmEngine {
         public boolean grounded, ceilingReached, playButton, selectedPanel;
         public double playerConfidence, playX = -1, playY = -1;
         public int terrainCols, terrainRows, registrationEpoch, completedSector;
+        /** Fresh HUD reading. Unknown is -1; zero applies to ordinary sector enemies only. */
+        public int remainingEnemies = -1;
+        public double remainingEnemiesConfidence;
+        /** Normalized x/y units require this aspect ratio for faithful map rendering. */
+        public double viewportAspectRatio = Double.NaN;
         /** Row-major occupancy: 0 = unobserved/occluded, 1 = free, 2 = solid. */
         public byte[] terrainCells = new byte[0];
         public double cameraDx, cameraDy, cameraX = Double.NaN, cameraY = Double.NaN, cameraConfidence;
-        public boolean registrationReset, sceneChanged, wallLeft, wallRight;
+        public boolean registrationReset, registrationLost, sceneChanged, wallLeft, wallRight;
         public double playerLeft = -1, playerTop = -1, playerRight = -1, playerBottom = -1;
         /** Candidate boxes [left, top, right, bottom, burning, dreadnought confidence]. */
         public double[][] enemyBoxes = new double[0][];
@@ -54,7 +60,7 @@ public final class FarmEngine {
         public String gamePackage = "com.Overcurve.Corebound";
         public long moveMs = 420, riseMs = 70, jumpTapMs = 70, settleMs = 180;
         public int jumpBudget = 7;
-        public long jumpSpacingMs = 500;
+        public long jumpSpacingMs = 350;
         public long ceilingEveryMs = 3500, jumpIntervalMs = 850, ceilingScanMs = 2200;
         public long maxRunSeconds = 180, maxSessionMinutes = 30, maxRuns = 100;
         public long staleFrameMs = 1500, unknownTimeoutMs = 15000, stuckTimeoutMs = 12000;
@@ -84,25 +90,32 @@ public final class FarmEngine {
         public static Action waitFor(String reason) { return new Action(Kind.WAIT, 0, 0, 0, false, 0, reason); }
     }
 
+    /** Immutable end-of-run map, captured before another run can reset the navigator. */
+    public static final class RunMap {
+        public final MapNavigator.Snapshot snapshot;
+        public final String outcome;
+        public final long runNumber, endedAt;
+        private RunMap(MapNavigator.Snapshot snapshot, String outcome, long runNumber, long endedAt) {
+            this.snapshot = snapshot; this.outcome = outcome;
+            this.runNumber = runNumber; this.endedAt = endedAt;
+        }
+    }
+
     private static final Pattern COUNTDOWN = Pattern.compile("(?:skip|close|reward|continue|ad ends?|remaining).{0,20}\\b\\d{1,3}\\s*(?:s|sec|seconds)?\\b|\\b\\d{1,3}\\s*(?:s|sec|seconds)\\b");
     private final Config config;
     private final MapNavigator navigator;
+    private final ArrayDeque<RunMap> finishedMaps = new ArrayDeque<>();
     private State state = State.IDLE;
     private String status = "Ready";
     private long sessionStart = -1, runStart = -1, lastCapture = -1, lastNow = -1;
-    private long busyUntil, unknownSince = -1, gateSince = -1, adSince = -1;
+    private long busyUntil, unknownSince = -1, adSince = -1;
 
     private long completedRuns, deaths, adsWatched;
 
     private int storeBacks, animationTaps;
     private boolean inRun, resultCounted, rewardRequested, observedAd, stopAfterResult;
     private boolean verifiedSelection;
-
-
-    private int navigationRoom;
-    private int lastCompletedSector;
-    private long lastGateSeen = -1;
-
+    private boolean runStartRequested;
 
 
     public FarmEngine(Config config) {
@@ -110,6 +123,11 @@ public final class FarmEngine {
         this.navigator = new MapNavigator(this.config);
     }
     public synchronized MapNavigator.Snapshot navigationSnapshot() { return navigator.snapshot(); }
+    public synchronized RunMap takeFinishedMap() { return finishedMaps.pollFirst(); }
+    /** Capture adapter resets registration only for an actual authorized Play/Retry tap. */
+    public synchronized boolean takeRunStartRequest() {
+        boolean requested=runStartRequested;runStartRequested=false;return requested;
+    }
     /** Read-only planning preview: no menu taps, hypothetical jumps or emitted action cooldowns. */
     public synchronized Action observe(Frame f) {
         if (f == null || !f.captureOk || !config.gamePackage.equals(f.packageName)) {
@@ -136,12 +154,13 @@ public final class FarmEngine {
 
     public synchronized void reset(long now) {
         state = State.IDLE; status = "Ready"; sessionStart = now; runStart = -1;
-        lastCapture = -1; lastNow = -1; busyUntil = 0; unknownSince = gateSince = adSince = -1;
+        lastCapture = -1; lastNow = -1; busyUntil = 0; unknownSince = adSince = -1;
 
         completedRuns = deaths = adsWatched = 0; storeBacks=animationTaps=0;
 
         inRun = resultCounted = rewardRequested = observedAd = stopAfterResult = false;
         verifiedSelection = false; resetNavigation();
+        runStartRequested = false;
     }
 
     public synchronized Action next(Frame f) {
@@ -203,7 +222,7 @@ public final class FarmEngine {
                 play = new Token("Play", f.playX, f.playY, f.playX, f.playY);
             if (play != null) {
                 resultCounted = false;
-                return tap(play, f.now, "Start Lost Scrapyard at Frozen five stars", 800);
+                return tapRun(play, f.now, "Start Lost Scrapyard at Frozen five stars", 800);
             }
             return waiting(f.now, "Target selected; waiting for Play button");
         }
@@ -220,18 +239,8 @@ public final class FarmEngine {
         if (f.healthFraction >= 0 && f.healthFraction <= 0.01)
             return pause("Health is empty; inspect the death screen before resuming");
         MapNavigator.Decision d = navigator.next(f);
-        if (navigator.room() != navigationRoom) { navigationRoom = navigator.room(); gateSince = -1; }
-        if (f.completedSector > lastCompletedSector) {
-            lastCompletedSector = f.completedSector; gateSince = -1; lastGateSeen = -1;
-        }
-        if (f.gate) {
-            if (gateSince < 0 && !navigator.sectorCleared()) gateSince = f.now;
-        } else if (lastGateSeen >= 0 && f.now-lastGateSeen>5000) {
-            gateSince = -1;
-        }
-        if (f.gate) lastGateSeen = f.now;
-        if (gateSince >= 0 && f.now-gateSince > clamp(config.gateTimeoutMs,3000,120000))
-            return pause("Gate search time limit reached; inspect unresolved targets");
+        // The room controller owns passage/turn progress. A visible gate is not
+        // a reason to wait for its animation or start a second arbitrary timer.
         if (d.pause) return pause(d.reason);
         if (d.direction == 0 && d.jumps == 0) return waiting(f.now, d.reason);
         unknownSince = -1;
@@ -239,9 +248,12 @@ public final class FarmEngine {
     }
     private Action handleEnd(Frame f, String text, boolean death, boolean crate) {
         if (state != State.END_SCREEN) unknownSince = -1;
-        state = State.END_SCREEN; gateSince = -1;
+        state = State.END_SCREEN;
         if (inRun && !resultCounted && !crate) {
             if (death) deaths++; else completedRuns++;
+            navigator.finish(!death);
+            finishedMaps.addLast(new RunMap(navigator.snapshot(), death ? "defeat" : "cleared",
+                    completedRuns + deaths, f.now));
             resultCounted = true; stopAfterResult = limitReached();
         }
         Token watch = button(f, "watch ad", "watch", "watch video", "watch for bonus", "watch reward");
@@ -257,7 +269,7 @@ public final class FarmEngine {
         if (retry != null) {
             if (stopAfterResult || limitReached()) return pause("Requested run limit reached; rewards processed");
             inRun = false; resultCounted = false; rewardRequested = false;
-            return tap(retry, f.now, death ? "Retry after defeat" : "Replay the same selected level", 1600);
+            return tapRun(retry, f.now, death ? "Retry after defeat" : "Replay the same selected level", 1600);
         }
         if(!crate&&!f.filterOffer&&watch==null&&animationTaps<3){animationTaps++;return tap(new Token("Speed results",.48,.32,.52,.38),f.now,"Speed up the confirmed result animation",400);}
         return waiting(f.now, "Results recognized; waiting for a labeled reward, Close or Retry button");
@@ -354,17 +366,10 @@ public final class FarmEngine {
         inRun = true; resultCounted = false; rewardRequested = false; stopAfterResult = false;
         animationTaps=0;
         runStart = now;
-        gateSince = -1;
         resetNavigation();
     }
     private void resetNavigation() {
         navigator.reset();
-        navigationRoom = 0;
-        lastCompletedSector = 0;
-
-        lastGateSeen = -1;
-
-
     }
     private Action waiting(long now, String reason) {
         if (unknownSince < 0) unknownSince = now;
@@ -373,7 +378,7 @@ public final class FarmEngine {
     }
     private Action pause(String reason) { state = State.PAUSED; status = reason; return new Action(Kind.PAUSE, 0, 0, 0, false, 0, reason); }
     private Action move(int direction, int jumps, long duration, long now, String reason) {
-        long spacing = clamp(config.jumpSpacingMs, 450, 1200);
+        long spacing = clamp(config.jumpSpacingMs, 250, 1200);
         long actualDuration = Math.min(700, Math.max(duration, jumps > 0
                 ? (jumps - 1) * spacing + clamp(config.jumpTapMs, 30, 120) : 0));
         return emit(new Action(Kind.MOVE, 0, 0, direction, jumps, spacing, actualDuration, reason), now, actualDuration);
@@ -382,6 +387,11 @@ public final class FarmEngine {
         if (!Double.isFinite(t.x()) || !Double.isFinite(t.y()) || t.x() < 0 || t.x() > 1 || t.y() < 0 || t.y() > 1)
             return pause("Invalid target coordinates; recalibrate the screen");
         return emit(new Action(Kind.TAP, t.x(), t.y(), 0, false, 70, reason), now, cooldown);
+    }
+    private Action tapRun(Token t,long now,String reason,long cooldown) {
+        Action action=tap(t,now,reason,cooldown);
+        if(action.kind==Kind.TAP)runStartRequested=true;
+        return action;
     }
     private Action emit(Action a, long now, long cooldown) { status = a.reason; busyUntil = now + cooldown; return a; }
     private Token button(Frame f, String... labels) {

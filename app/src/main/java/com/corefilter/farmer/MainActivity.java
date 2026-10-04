@@ -15,6 +15,7 @@ import android.widget.*;
 public final class MainActivity extends Activity {
     private TextView connection,buildSummary;
     private Button primary;
+    private MapExportUi mapExport;
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
@@ -27,8 +28,10 @@ public final class MainActivity extends Activity {
         super.onResume();refreshStatus();
         UpdateManager.onResume(this);
         if(getIntent().getBooleanExtra("editBuild",false)){getIntent().removeExtra("editBuild");editProfile();}
+        if(getIntent().getBooleanExtra("openMaps",false)){getIntent().removeExtra("openMaps");showSavedMaps();}
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);}
+    @Override protected void onStop(){if(mapExport!=null)mapExport.stop();super.onStop();}
 
     private void home(){
         FrameLayout root=new FrameLayout(this);root.setTag("dashboard-insets");root.setBackgroundColor(Ui.BG);
@@ -55,6 +58,8 @@ public final class MainActivity extends Activity {
         buildSummary=Ui.text(this,"",14,Ui.MUTED);build.addView(buildSummary);
         Button edit=Ui.secondaryButton(this,"Edit build & farming settings",this::editProfile);edit.setTag("edit-build");build.addView(edit);main.addView(build);
 
+        Button maps=Ui.secondaryButton(this,"Saved maps & Wi-Fi transfer",this::showSavedMaps);maps.setTag("saved-maps");main.addView(maps);
+
         LinearLayout updates=Ui.card(this);Ui.title(updates,"App updates");
         updates.addView(Ui.text(this,"Download new versions from your GitHub releases, then confirm the update on this phone.",13,Ui.MUTED));
         Button check=Ui.secondaryButton(this,"Check for updates",()->UpdateManager.show(this));check.setTag("check-updates");updates.addView(check);main.addView(updates);
@@ -63,9 +68,9 @@ public final class MainActivity extends Activity {
         step(guide,"1","Choose Lost Scrapyard","Set the boost to Frozen ★5.");
         step(guide,"2","Calibrate once","On the bar: left, right, then jump area.");
         step(guide,"3","Run, then keep an eye on it","Pause stops touches. Stop ends the session.");main.addView(guide);
-        main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Game screenshots stay on this phone. App updates download from GitHub.",12,Ui.MUTED));
+        main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.3.0 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.4.0 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){
@@ -86,6 +91,7 @@ public final class MainActivity extends Activity {
           .setPositiveButton("Open Accessibility",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("Cancel",null).show();
     }
     private void openGame(){Intent i=getPackageManager().getLaunchIntentForPackage("com.Overcurve.Corebound");if(i!=null)startActivity(i);else Toast.makeText(this,"Corebound is not installed on this device",Toast.LENGTH_LONG).show();}
+    private void showSavedMaps(){if(FarmerService.instance!=null)FarmerService.instance.pause("Transferring saved maps");if(mapExport==null)mapExport=new MapExportUi(this);mapExport.show();}
 
     private EditText field(LinearLayout l,String key,String label,String value,boolean number){
         TextView caption=Ui.text(this,label,12,Ui.MUTED);l.addView(caption);
@@ -124,7 +130,7 @@ public final class MainActivity extends Activity {
         l.addView(Ui.text(this,"Your build image has 3 hookshots: 7 total jumps. Update the count whenever your equipped build changes.",12,Ui.MUTED));
         section(l,"Movement & contact");
         EditText move=field(l,"moveMs","Horizontal hold · 150–700 ms",String.valueOf(p.moveMs),true);
-        EditText spacing=field(l,"jumpSpacingMs","Minimum jump interval · 450–1200 ms",String.valueOf(p.jumpSpacingMs),true);
+        EditText spacing=field(l,"jumpSpacingMs","Minimum jump interval · 250–1200 ms",String.valueOf(p.jumpSpacingMs),true);
         EditText settle=field(l,"settleMs","Burn contact · 80–500 ms",String.valueOf(p.settleMs),true);
         l.addView(Ui.text(this,"Short contact ignites enemies; the route then moves on. Equipment notes do not predict damage.",12,Ui.MUTED));
         section(l,"Session & rewards");
@@ -142,7 +148,7 @@ public final class MainActivity extends Activity {
             int width=Math.min(Ui.dp(this,560),getResources().getDisplayMetrics().widthPixels-Ui.dp(this,24));d.getWindow().setLayout(width,WindowManager.LayoutParams.WRAP_CONTENT);
             d.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(Ui.MINT);d.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(Ui.MUTED);
             d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
-                int h=val(hooks,0,10),x=val(extra,0,20),m=val(move,150,700),s=val(spacing,450,1200),contact=val(settle,80,500),maxRun=val(run,45,600);
+                int h=val(hooks,0,10),x=val(extra,0,20),m=val(move,150,700),s=val(spacing,250,1200),contact=val(settle,80,500),maxRun=val(run,45,600);
                 int maxSession=continuous.isChecked()?p.maxSessionMinutes:val(session,1,240);
                 p.name=name.getText().toString().trim();p.hull=hull.getText().toString().trim();p.weapons=weapons.getText().toString().trim();p.notes=notes.getText().toString().trim();
                 p.hookshotCount=h;p.extraJumps=x;p.moveMs=m;p.jumpSpacingMs=s;p.settleMs=contact;p.maxRunSeconds=maxRun;p.maxSessionMinutes=maxSession;

@@ -65,7 +65,7 @@ public class FarmEngineTest {
         FarmEngine e = new FarmEngine(new Config());
         Action a = e.next(game(0));
         assertEquals(Kind.MOVE, a.kind); assertEquals(1, a.direction); assertTrue(a.rise);
-        assertEquals(1, a.jumpCount); assertEquals(500, a.jumpSpacingMs);
+        assertEquals(1, a.jumpCount); assertEquals(350, a.jumpSpacingMs);
         Frame rising=game(700);rising.playerY=.50;
         assertTrue(e.next(rising).jumpCount<=1);
         Frame next=game(1400);next.playerY=.53;
@@ -179,7 +179,7 @@ public class FarmEngineTest {
         assertEquals(1, e.completedRuns());
     }
 
-    @Test public void gatesSearchImmediatelyButTimeoutIsBounded() {
+    @Test public void visibleGateDoesNotStartAnAnimationTimeoutWhileProgressContinues() {
         Config c = new Config(); c.gateTimeoutMs = 3000;
         FarmEngine e = new FarmEngine(c);
         Frame f = game(0); f.gate = true;
@@ -187,7 +187,7 @@ public class FarmEngineTest {
         f = game(1000); f.gate = true;
         Action a = e.next(f); assertEquals(Kind.MOVE, a.kind); assertTrue(a.jumpCount<=1);
         f = game(4000); f.gate = true;
-        assertEquals(Kind.PAUSE, e.next(f).kind);
+        assertEquals(Kind.MOVE, e.next(f).kind);
     }
 
     @Test public void stationaryBodyRecoveryIgnoresAnimatedSceneBrightnessAndIsBounded() {
@@ -219,11 +219,11 @@ public class FarmEngineTest {
         assertEquals(Kind.PAUSE,e.next(f).kind);
     }
 
-    @Test public void visibleLeftGateChangesTraversalDirection(){
+    @Test public void aGateBehindTheSpawnCannotReverseTheEntranceObjective(){
         FarmEngine e=new FarmEngine(new Config());Frame f=game(0);f.gate=true;f.gateX=.2;f.playerX=.6;f.enemyBoxes=new double[0][];e.next(f);
         f=game(2500);f.gate=true;f.gateX=.2;f.playerX=.6;
         f.enemyBoxes=new double[][]{{.2,.3,.25,.36,0,0}};
-        assertEquals(-1,e.next(f).direction);
+        assertEquals(1,e.next(f).direction);
     }
 
     @Test public void resultAnimationTapsRequireRecognizedResults(){

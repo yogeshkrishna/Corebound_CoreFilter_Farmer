@@ -38,4 +38,64 @@ public class ScreenInterpreterTest {
         FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(new FarmEngine.Token("Complete!",.4,.03,.6,.15),new FarmEngine.Token("Continue",.22,.81,.46,.95)),v);
         assertEquals(FarmEngine.Kind.PAUSE,new FarmEngine(new FarmEngine.Config()).next(f).kind);
     }
+    @Test public void labelledHudCountIsFreshAndZeroIsNeverCarriedForward(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame first=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Enemies remaining: 0",.65,.05,.95,.12)),v);
+        assertEquals(0,first.remainingEnemies);assertTrue(first.remainingEnemiesConfidence>.9);
+        FarmEngine.Frame skipped=ScreenInterpreter.interpret(1500,1500,"com.Overcurve.Corebound",null,v);
+        assertEquals(-1,skipped.remainingEnemies);assertEquals(0,skipped.remainingEnemiesConfidence,0);
+        FarmEngine.Frame newSector=ScreenInterpreter.interpret(2000,2000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Sector 2/4",.4,.16,.6,.22)),v);
+        assertEquals(-1,newSector.remainingEnemies);assertEquals(0,newSector.completedSector);
+    }
+    @Test public void splitHudLabelNeedsOneAdjacentNumberOnTheSameLine(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Remaining enemies",.6,.05,.84,.12),new FarmEngine.Token("12",.86,.05,.91,.12)),v);
+        assertEquals(12,f.remainingEnemies);assertEquals(.85,f.remainingEnemiesConfidence,0);
+        f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Remaining enemies",.6,.05,.84,.12),new FarmEngine.Token("12",.86,.16,.91,.23)),v);
+        assertEquals(-1,f.remainingEnemies);
+    }
+    @Test public void arbitraryNumbersAndOffHudAdTextCannotBecomeAnEnemyCount(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("0",.86,.05,.91,.12),new FarmEngine.Token("Enemies left: 0",.5,.5,.9,.6)),v);
+        assertEquals(-1,f.remainingEnemies);
+        v.gameplay=false;
+        f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Enemies left: 0",.5,.05,.9,.12)),v);
+        assertEquals(-1,f.remainingEnemies);
+    }
+    @Test public void conflictingHudReadingsRemainUnknown(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Enemies: 4",.6,.03,.85,.09),new FarmEngine.Token("Enemies: 0",.6,.15,.85,.21)),v);
+        assertEquals(-1,f.remainingEnemies);assertEquals(0,f.remainingEnemiesConfidence,0);
+    }
+    @Test public void countFirstAndBotLabelsAreAcceptedOnlyWithTheirWords(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        for(String label:new String[]{"Enemies left:5","5 enemies left","Bots remaining:5"}) {
+            FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+                new FarmEngine.Token(label,.6,.05,.95,.12)),v);
+            assertEquals(label,5,f.remainingEnemies);
+        }
+        FarmEngine.Frame unlabelled=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Remaining:5",.6,.05,.95,.12)),v);
+        assertEquals(-1,unlabelled.remainingEnemies);
+    }
+    @Test public void remainingNumberNeedsItsAdjacentEnemyLabel(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Enemies",.55,.05,.71,.12),new FarmEngine.Token("Remaining:5",.73,.05,.96,.12)),v);
+        assertEquals(5,f.remainingEnemies);
+    }
+    @Test public void zeroOrdinaryEnemiesDoesNotInventSectorOrSpectrumCompletion(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(
+            new FarmEngine.Token("Enemies left: 0",.6,.05,.95,.12)),v);
+        assertEquals(0,f.remainingEnemies);assertEquals(0,f.completedSector);assertFalse(f.endScreen);
+        assertFalse(f.filterLoot);assertFalse(f.filterOffer);
+    }
 }
