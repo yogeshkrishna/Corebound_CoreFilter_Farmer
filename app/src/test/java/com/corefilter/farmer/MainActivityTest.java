@@ -34,6 +34,18 @@ public class MainActivityTest {
     @Before public void resetState() {
         FarmerService.instance = null;
         RuntimeEnvironment.getApplication().getSharedPreferences("profile", 0).edit().clear().commit();
+        RuntimeEnvironment.getApplication().getSharedPreferences("mode", 0).edit().clear().commit();
+    }
+    @Test public void modeSelectionPersistsAndScreenToolsStayInApp(){
+        try(ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).setup()){
+            MainActivity activity=controller.get();View root=activity.getWindow().getDecorView();
+            root.findViewWithTag("mode-manual").performClick();controller.recreate();activity=controller.get();
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Selected: Manual mapping"));
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Preview captured game"));
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Saved maps & Wi-Fi transfer"));
+            activity.getWindow().getDecorView().findViewWithTag("mode-farmer").performClick();
+            assertFalse(activity.getSharedPreferences("mode",0).getBoolean("manualMapping",true));
+        }
     }
 
     @Test public void homeStartsAndExplainsControlsWithoutStartingAutomation() {

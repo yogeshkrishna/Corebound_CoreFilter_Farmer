@@ -2,6 +2,7 @@ package com.corefilter.farmer.maps;
 
 import android.content.Context;
 import com.corefilter.farmer.Profile;
+import com.corefilter.farmer.engine.FarmEngine;
 import com.corefilter.farmer.engine.MapNavigator;
 import java.io.*;
 import java.security.MessageDigest;
@@ -24,19 +25,41 @@ public final class MapArchiveStore {
         File dir=new File(c.getFilesDir(),"map-queue");if(!dir.isDirectory()&&!dir.mkdirs())throw new IOException("Cannot create private map storage");return dir;
     }
     public static synchronized File save(Context context,MapNavigator.Snapshot s,String outcome,long runNumber)throws IOException {
+        return save(context,s,outcome,runNumber,null);
+    }
+    public static synchronized File save(Context context,FarmEngine.RunMap run)throws IOException {
+        return save(context,run.snapshot,run.outcome,run.runNumber,run.recordingId);
+    }
+    /** Called only at service startup, before a live recording exists. */
+    public static synchronized int recoverManual(Context c)throws IOException{
+        File[] dirs=new File(c.getFilesDir(),"mapping-work").listFiles(File::isDirectory);int recovered=0;
+        if(dirs!=null)for(File d:dirs)if(d.getName().matches("[a-f0-9-]{36}")){
+            File[] frames=d.listFiles((dir,name)->name.endsWith(".jpg"));if(frames==null||frames.length==0)continue;
+            // Preserve original frames/poses after a crash. The lost in-memory
+            // atlas is explicitly unknown, never reconstructed with guessed offsets.
+            save(c,new MapNavigator(new FarmEngine.Config()).snapshot(),"manual-recovered",0,d.getName());recovered++;
+        }return recovered;
+    }
+    private static File save(Context context,MapNavigator.Snapshot s,String outcome,long runNumber,String recordingId)throws IOException {
         if(s==null)throw new IOException("No map snapshot to save");
         String stamp=new SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(new Date());
         String id="run-"+stamp+"-"+Math.max(0,runNumber)+"-"+UUID.randomUUID().toString().substring(0,8);
         File dir=directory(context),part=new File(dir,id+".partial"),finished=new File(dir,id+".zip");
         try {
             JSONObject data=metadata(context,s,outcome,runNumber);
+            data.put("recordingMode",recordingId==null?"farmer":"manual-mapping");
+            if(recordingId!=null){
+                data.put("manualRecording",new JSONObject().put("id",recordingId).put("keyframes","manual-frames/*.jpg").put("poses","manual-frames/frames.jsonl").put("limit","900 sampled frames or 32 MiB; a keyframes-truncated file marks the limit").put("controls","Human touches are not intercepted or inferred as ground-truth commands"));
+                data.getJSONObject("model").put("remainingJumps",JSONObject.NULL).put("learnedJumpRise",JSONObject.NULL);
+            }
             byte[] image=MapPngRenderer.render(s,runNumber,outcome);
             try(FileOutputStream raw=new FileOutputStream(part);ZipOutputStream zip=new ZipOutputStream(raw)) {
                 entry(zip,"map.png",image);entry(zip,"map.json",data.toString(2).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                ManualRecordingStore.append(context,recordingId,zip);
                 entry(zip,"README.txt",("Ceiling Scout observed level map\r\n\r\nmap.png: observed rectangular boundaries, path, ceiling checks and enemy sightings.\r\nmap.json: coordinate units, all retained model arrays, build settings, confidence and incomplete coverage.\r\n\r\nBlank areas are unknown. Separate panels have unlinked origins; no connecting passage is inferred.\r\nA burn attempt is not a confirmed kill. A successful run does not prove full ceiling coverage.\r\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
                 zip.finish();raw.getFD().sync();
             }
-            if(!part.renameTo(finished))throw new IOException("Cannot finalize saved map bundle");return finished;
+            if(!part.renameTo(finished))throw new IOException("Cannot finalize saved map bundle");ManualRecordingStore.committed(context,recordingId);return finished;
         }catch(JSONException e){throw new IOException("Cannot encode map metadata",e);}finally{if(part.exists()&&!part.delete())part.deleteOnExit();}
     }
     private static void entry(ZipOutputStream z,String name,byte[] value)throws IOException {z.putNextEntry(new ZipEntry(name));z.write(value);z.closeEntry();}

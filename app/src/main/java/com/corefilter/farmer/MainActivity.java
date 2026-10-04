@@ -13,7 +13,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.*;
 
 public final class MainActivity extends Activity {
-    private TextView connection,buildSummary;
+    private TextView connection,buildSummary,modeSummary;
     private Button primary;
     private MapExportUi mapExport;
 
@@ -50,15 +50,25 @@ public final class MainActivity extends Activity {
 
         LinearLayout setup=Ui.card(this);
         connection=Ui.text(this,"Controls not connected",15,Ui.AMBER);connection.setTypeface(null,Typeface.BOLD);setup.addView(connection);
-        setup.addView(Ui.text(this,"Open the game, then use Run on the floating bar.",14,Ui.MUTED));
+        setup.addView(Ui.text(this,"Open the game, then use Run or Record on the floating bar.",14,Ui.MUTED));
         primary=Ui.button(this,"Enable controls",()->{if(FarmerService.instance==null)enableControls();else FarmerService.instance.showOverlay();});primary.setTag("connect-controls");setup.addView(primary);
         Button open=Ui.secondaryButton(this,"Open Corebound",this::openGame);open.setTag("open-game");setup.addView(open);main.addView(setup);
+
+        LinearLayout modes=Ui.card(this);Ui.title(modes,"For this mapping update");
+        modeSummary=Ui.text(this,"",14,Ui.MINT);modes.addView(modeSummary);
+        modes.addView(Ui.text(this,"Map while you play to record floors, walls, ceilings and clean gameplay images. You handle movement, rewards and ads. Farmer mode runs the automation.",13,Ui.MUTED));
+        Button mapMode=Ui.secondaryButton(this,"Map while I play",()->selectMode(true));mapMode.setTag("mode-manual");modes.addView(mapMode);
+        Button farmMode=Ui.secondaryButton(this,"Use farmer",()->selectMode(false));farmMode.setTag("mode-farmer");modes.addView(farmMode);main.addView(modes);
 
         LinearLayout build=Ui.card(this);Ui.title(build,"Your farming build");
         buildSummary=Ui.text(this,"",14,Ui.MUTED);build.addView(buildSummary);
         Button edit=Ui.secondaryButton(this,"Edit build & farming settings",this::editProfile);edit.setTag("edit-build");build.addView(edit);main.addView(build);
 
         Button maps=Ui.secondaryButton(this,"Saved maps & Wi-Fi transfer",this::showSavedMaps);maps.setTag("saved-maps");main.addView(maps);
+        LinearLayout screenTools=Ui.card(this);Ui.title(screenTools,"Screen tools");
+        screenTools.addView(Ui.secondaryButton(this,"Preview captured game",()->{if(FarmerService.instance==null){Toast.makeText(this,"Connect controls first",Toast.LENGTH_SHORT).show();return;}FarmerService.instance.requestPreview();}));
+        Switch capture=toggle(screenTools,"capture-compatibility","Compatibility capture",getSharedPreferences("capture",0).getBoolean("compatibility",false));
+        capture.setOnCheckedChangeListener((button,checked)->{getSharedPreferences("capture",0).edit().putBoolean("compatibility",checked).apply();if(FarmerService.instance!=null)FarmerService.instance.setCompatibilityCapture(checked);});main.addView(screenTools);
 
         LinearLayout updates=Ui.card(this);Ui.title(updates,"App updates");
         updates.addView(Ui.text(this,"Download new versions from your GitHub releases, then confirm the update on this phone.",13,Ui.MUTED));
@@ -67,10 +77,10 @@ public final class MainActivity extends Activity {
         LinearLayout guide=Ui.card(this);Ui.title(guide,"Ready in three steps");
         step(guide,"1","Choose Lost Scrapyard","Set the boost to Frozen ★5.");
         step(guide,"2","Calibrate once","On the bar: left, right, then jump area.");
-        step(guide,"3","Run, then keep an eye on it","Pause stops touches. Stop ends the session.");main.addView(guide);
+        step(guide,"3","Start your selected mode","Run farms. Record maps while you play. Save keeps your map.");main.addView(guide);
         main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.4.3 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.4.4 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){
@@ -83,6 +93,7 @@ public final class MainActivity extends Activity {
         boolean connected=FarmerService.instance!=null;
         connection.setText(connected?"●  Controls connected":"○  Connect controls to begin");connection.setTextColor(connected?Ui.MINT:Ui.AMBER);
         primary.setText(connected?"Show floating bar":"Enable controls");
+        if(modeSummary!=null)modeSummary.setText(getSharedPreferences("mode",0).getBoolean("manualMapping",false)?"Selected: Manual mapping · Record / Save":"Selected: Farmer · Run / Pause");
         Profile p=Profile.load(this);buildSummary.setText((p.weapons.trim().isEmpty()?"Current equipment":p.weapons)+"\n"+p.hookshotCount+" hookshots · "+p.totalJumpBudget()+" jumps per ascent\n"+(p.continuousFarm?"Keeps farming until you stop":p.maxSessionMinutes+" minute session"));
     }
     private void enableControls(){
@@ -91,6 +102,7 @@ public final class MainActivity extends Activity {
           .setPositiveButton("Open Accessibility",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("Cancel",null).show();
     }
     private void openGame(){Intent i=getPackageManager().getLaunchIntentForPackage("com.Overcurve.Corebound");if(i!=null)startActivity(i);else Toast.makeText(this,"Corebound is not installed on this device",Toast.LENGTH_LONG).show();}
+    private void selectMode(boolean manual){getSharedPreferences("mode",0).edit().putBoolean("manualMapping",manual).apply();if(FarmerService.instance!=null)FarmerService.instance.selectMode(manual);refreshStatus();Toast.makeText(this,manual?"Open Corebound and press Record on the bar":"Open Corebound and press Run on the bar",Toast.LENGTH_LONG).show();}
     private void showSavedMaps(){if(FarmerService.instance!=null)FarmerService.instance.pause("Transferring saved maps");if(mapExport==null)mapExport=new MapExportUi(this);mapExport.show();}
 
     private EditText field(LinearLayout l,String key,String label,String value,boolean number){

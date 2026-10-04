@@ -1,6 +1,10 @@
-# Corridor controller, version 0.4.3
+# Corridor controller, version 0.4.4
 
 The controller commits to a direction through each cavern. Its normal action is forward movement with a base jump when grounded and when the measured trajectory clears the roof. It does not navigate an air grid or spend all Hookshots as a repeated jump batch.
+
+Version 0.4.4 releases a shaft-entry waypoint when an observed descent reaches a supported lower exit. It can select the opposite passage without holding the old entry position. Fresh local passage evidence overrides a falsely protruding mapped platform corner while stepping into a drop. During a roof scout, a clear column beside a rectangular ledge permits a short sideways alignment before upward Hookshots resume. A continuous flat roof does not permit that probe.
+
+Temporary manual mapping bypasses the controller entirely. It records terrain, camera measurements, path and ceiling visibility while the user supplies all touches. Unlinked views remain separate; sampled JPEGs are retained alongside the map for later inspection. It does not estimate the user's jump consumption or learn a replayable touch sequence.
 
 ## Decisions during a run
 
@@ -41,6 +45,6 @@ The current controller starts a fresh atlas each run. Stored bundles are for fut
 
 The JSON additionally retains up to 450 terrain grids sampled at least 700 ms apart, with capture times, camera confidence, player position and corridor direction. Missing camera offsets are null. These local observations survive camera gaps without being pasted into the world atlas at invented positions.
 
-See [verification](verification-0.4.3.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+See [verification](verification-0.4.4.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
 
 In 0.4.3, a camera-origin recovery retains an active scout or descent. Full-screen OCR periodically checks gameplay and always checks ads. Install-card evidence overrides false gameplay pixels. Two fresh confirmed Corebound views end an ad session. Pausing an ad preserves its state for resuming and bounded Play Store recovery. Overlay menus suspend new decisions and captures until dismissed; rotation clamps the bar and menu to the current display.

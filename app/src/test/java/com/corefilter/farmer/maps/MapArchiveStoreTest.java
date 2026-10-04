@@ -18,6 +18,25 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class) @Config(sdk=35)
 public class MapArchiveStoreTest {
+    @Test public void manualFramesAreIncludedInSavedBundleAndRecoveredAfterInterruption()throws Exception{
+        Context c=RuntimeEnvironment.getApplication();FarmEngine.Config config=new FarmEngine.Config();config.manualMapping=true;FarmEngine engine=new FarmEngine(config);
+        FarmEngine.Frame frame=new FarmEngine.Frame(1000,"com.Overcurve.Corebound","",null);frame.gameplay=true;frame.cameraConfidence=frame.playerConfidence=.9;frame.cameraX=frame.cameraY=0;frame.playerX=.5;frame.playerY=.6;
+        frame.terrainCols=48;frame.terrainRows=24;frame.terrainCells=new byte[48*24];Arrays.fill(frame.terrainCells,(byte)1);frame.viewportAspectRatio=2.17;
+        engine.next(frame);byte[] image={ (byte)0xff,(byte)0xd8,1,2,(byte)0xff,(byte)0xd9 };
+        ManualRecordingStore.record(c,engine.recordingId(),frame,engine.navigationSnapshot(),image);
+        engine.stop();File saved=MapArchiveStore.save(c,engine.takeFinishedMap());
+        try(ZipFile z=new ZipFile(saved)){
+            JSONObject data=new JSONObject(new String(z.getInputStream(z.getEntry("map.json")).readAllBytes(),StandardCharsets.UTF_8));assertEquals("manual-mapping",data.getString("recordingMode"));
+            assertTrue(data.getJSONObject("model").isNull("remainingJumps"));assertTrue(data.getJSONObject("model").isNull("learnedJumpRise"));
+            assertArrayEquals(image,z.getInputStream(z.getEntry("manual-frames/frame-000000-1000.jpg")).readAllBytes());assertNotNull(z.getEntry("manual-frames/frames.jsonl"));
+        }
+        assertEquals(0,ManualRecordingStore.stagedCount(c));
+        String interrupted=UUID.randomUUID().toString();ManualRecordingStore.record(c,interrupted,frame,engine.navigationSnapshot(),image);
+        assertEquals(1,MapArchiveStore.recoverManual(c));assertEquals(0,MapArchiveStore.recoverManual(c));
+        boolean recovered=false;for(MapArchiveStore.Bundle b:MapArchiveStore.list(c))try(ZipFile z=new ZipFile(b.file)){
+            JSONObject data=new JSONObject(new String(z.getInputStream(z.getEntry("map.json")).readAllBytes(),StandardCharsets.UTF_8));if(data.getString("outcome").equals("manual-recovered")){recovered=true;assertFalse(data.getBoolean("complete"));assertNotNull(z.getEntry("manual-frames/frames.jsonl"));}
+        }assertTrue(recovered);
+    }
     private Context context;
     @Before public void prepare()throws Exception {context=RuntimeEnvironment.getApplication();for(MapArchiveStore.Bundle b:MapArchiveStore.list(context))assertTrue(b.file.delete());new Profile().save(context);}
     private MapNavigator.Snapshot snapshot(){

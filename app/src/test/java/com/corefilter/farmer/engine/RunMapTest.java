@@ -7,6 +7,31 @@ import static com.corefilter.farmer.engine.FarmEngine.*;
 
 /** End-screen and replay integration: do not lose or duplicate a completed map. */
 public class RunMapTest {
+    @Test public void manualViewsWithoutPlayerOrCameraDoNotRepaintTheFirstOrigin(){
+        Config c=new Config();c.manualMapping=true;FarmEngine e=new FarmEngine(c);
+        Frame first=gameplay(0);first.playerConfidence=first.cameraConfidence=0;e.next(first);
+        double[][] original=e.navigationSnapshot().cells;
+        Frame moved=gameplay(1000);moved.playerConfidence=moved.cameraConfidence=0;Arrays.fill(moved.terrainCells,(byte)2);e.next(moved);
+        double[][] after=e.navigationSnapshot().cells;assertEquals(original.length,after.length);
+        for(int i=0;i<original.length;i++)assertArrayEquals(original[i],after[i],0);
+        assertEquals(2,e.navigationSnapshot().screenTerrain.length);
+        assertTrue(Double.isNaN(e.navigationSnapshot().screenPoses[1][3]));
+    }
+    @Test public void humanMappingRecordsAndExportsWithoutAnyTouchesOrNavigationTrace(){
+        FarmEngine.Config c=new FarmEngine.Config();c.manualMapping=true;FarmEngine e=new FarmEngine(c);
+        for(int i=0;i<5;i++){
+            Frame f=gameplay(i*700);f.cameraX=i*.10;f.playerY=i==0?.6:.45;f.grounded=i==0;
+            assertEquals(Kind.WAIT,e.next(f).kind);assertFalse(e.takeRunStartRequest());
+        }
+        assertEquals("MANUAL_MAPPING",e.navigationPhase());assertEquals(0,e.navigationSnapshot().controlTrace.length);
+        assertEquals(7,e.navigationSnapshot().remainingJumps);assertTrue(e.navigationSnapshot().borders.length>0);
+        String id=e.recordingId();assertNotNull(id);
+        assertEquals(Kind.WAIT,e.next(result(4000,false,true)).kind);
+        RunMap report=e.takeFinishedMap();assertNotNull(report);assertEquals("manual-cleared",report.outcome);assertEquals(id,report.recordingId);
+        Frame ad=new Frame(5000,"com.android.vending","Install",null);ad.observedAd=true;assertEquals(Kind.WAIT,e.next(ad).kind);
+        assertNull(e.takeFinishedMap());assertEquals(Kind.WAIT,e.next(gameplay(6000)).kind);assertNotEquals(id,e.recordingId());
+        e.stop();report=e.takeFinishedMap();assertEquals("manual-partial",report.outcome);assertEquals(0,report.snapshot.controlTrace.length);
+    }
     private Frame gameplay(long now) {
         Frame f = new Frame(now,"com.Overcurve.Corebound","",null);
         f.gameplay=true;f.playerX=.5;f.playerY=.6;f.playerConfidence=.9;

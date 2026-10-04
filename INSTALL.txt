@@ -1,4 +1,4 @@
-CEILING SCOUT 0.4.3 — PHONE UPDATE
+CEILING SCOUT 0.4.4 — PHONE UPDATE
 
 1. In your existing Ceiling Scout app, tap Check for updates > Download & install.
    Version 0.2.0 after the repository rename: choose Update source, enter
@@ -7,10 +7,13 @@ CEILING SCOUT 0.4.3 — PHONE UPDATE
    Install over the old app. Do NOT uninstall: your build and calibration stay saved.
    First install: https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest > Ceiling-Scout.apk.
 3. Open Ceiling Scout > Show floating bar > Open Corebound.
-4. Select Lost Scrapyard boosted to Frozen five stars and press Run on the bar.
+4. Choose a mode in the app: Use farmer, or Map while I play.
+   Select Lost Scrapyard boosted to Frozen five stars.
+   Farmer: press Run. Manual mapping: press Record, play and inspect the ceilings yourself, then Save.
    Default: three Hookshots / seven jumps. Change equipment through Edit build & farming settings.
-5. More controls are under the bar's ••• menu. Calibrate once if needed.
-   Preview captured game lets you check that the bar is absent from the input image.
+5. Build, Calibrate and Stop are under the bar's ••• menu. Calibrate once if needed.
+   Preview, compatibility capture and Saved maps & Wi-Fi transfer are in the app.
+   Manual mapping saves completed runs automatically, and Save keeps unfinished routes.
 
 FUTURE UPDATES
 Ceiling Scout > Check for updates > Download & install.
@@ -35,4 +38,4 @@ then removes only the corresponding verified phone copies.
 Each ZIP includes map.png (picture) and map.json (raw observations/build/confidence).
 Unknown areas remain blank. Fixed-pool identification is for a future iteration.
 
-See README.md, docs/map-export.md and docs/verification-0.4.3.md for details.
+See README.md, docs/map-export.md and docs/verification-0.4.4.md for details.
