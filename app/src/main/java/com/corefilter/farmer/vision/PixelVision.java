@@ -13,6 +13,8 @@ public final class PixelVision {
 
     public static final class Result {
         public boolean gameplay;
+        /** Screen rectangles hidden by our stationary controls; they are unknown, never free terrain. */
+        public double[][] occludedRegions=new double[0][];
         public boolean controlsDetected;
         public boolean gate;
         public double gateX = -1, gateY = -1;
@@ -56,18 +58,22 @@ public final class PixelVision {
     }
 
     public static Result analyse(int[] argb, int width, int height) {
+        return analyse(argb,width,height,new double[0][]);
+    }
+    public static Result analyse(int[] argb,int width,int height,double[][] occlusions){
         if (argb == null || width < 1 || height < 1 ||
                 (long) width * height > argb.length) {
             throw new IllegalArgumentException("A complete positive-size ARGB frame is required");
         }
         Result result = new Result();
+        result.occludedRegions=occlusions==null?new double[0][]:occlusions;
         // Bound allocation and per-frame work independently of phone resolution.
         int step = Math.max(1, (height + 269) / 270);
         int w = (width + step - 1) / step, h = (height + step - 1) / step;
         int[] p = new int[w * h];
         for (int y = 0; y < h; y++) {
             int row = Math.min(y * step, height - 1) * width;
-            for (int x = 0; x < w; x++) p[y * w + x] = argb[row + Math.min(x * step, width - 1)];
+            for (int x = 0; x < w; x++) p[y * w + x] = occluded((x+.5)/w,(y+.5)/h,result)?0xff000000:argb[row + Math.min(x * step, width - 1)];
         }
         result.sceneSignature = signature(p, w, h);
         result.motionSignature = result.sceneSignature;
@@ -259,7 +265,7 @@ public final class PixelVision {
     }
 
     private static boolean masked(double x,double y,Result result) {
-        return y<.14||y>.87||(x<.40&&y>.69)||
+        return occluded(x,y,result)||y<.14||y>.87||(x<.40&&y>.69)||
             (result.playerConfidence>.35&&x>result.playerLeft-.014&&x<result.playerRight+.014&&
                 y>result.playerTop-.018&&y<result.playerBottom+.018);
     }
@@ -282,12 +288,14 @@ public final class PixelVision {
     }
 
     private static boolean geometryMasked(double x,double y,Result r) {
+        if(occluded(x,y,r))return true;
         // A picture edge has no observed free side and must never become a wall.
         if(x<.018||x>.982||y<.14||y>.87||(x<.40&&y>.69))return true;
         if(r.playerConfidence>.35&&x>r.playerLeft&&x<r.playerRight&&y>r.playerTop&&y<r.playerBottom)return true;
         for(double[] b:r.enemyBoxes)if(x>b[0]&&x<b[2]&&y>b[1]&&y<b[3])return true;
         return false;
     }
+    public static boolean occluded(double x,double y,Result r){for(double[] b:r.occludedRegions)if(b.length>=4&&x>=b[0]&&x<=b[2]&&y>=b[1]&&y<=b[3])return true;return false;}
 
     /** Grey colour is merely a candidate. A component must present long, flat
      * axis-aligned edges with a dark free side, and most of its exposed silhouette
@@ -380,6 +388,7 @@ public final class PixelVision {
         for(int gy=0;gy<result.terrainRows;gy++)for(int gx=0;gx<result.terrainCols;gx++) {
             double nx=(gx+.5)/result.terrainCols,ny=(gy+.5)/result.terrainRows;
             if(masked(nx,ny,result))continue;
+            boolean covered=false;for(double[] b:result.occludedRegions)if(b.length>=4&&b[0]<(gx+1.)/result.terrainCols&&b[2]>gx/(double)result.terrainCols&&b[1]<(gy+1.)/result.terrainRows&&b[3]>gy/(double)result.terrainRows){covered=true;break;}if(covered)continue;
             int x0=gx*w/result.terrainCols,x1=(gx+1)*w/result.terrainCols;
             int y0=gy*h/result.terrainRows,y1=(gy+1)*h/result.terrainRows;
             int solid=0,free=0,total=0,longestRow=0,longestColumn=0;
@@ -397,7 +406,13 @@ public final class PixelVision {
         }
         for(int y=0;y<56;y++)for(int x=0;x<120;x++) {
             int px=Math.min(w-1,(int)((x+.5)*w/120)),py=Math.min(h-1,(int)((y+.5)*h/56));
-            result.registrationForeground[y*120+x]=evidence.solid[py*w+px];
+            // A thin verified face can fall between registration sample centers.
+            // Retain its neighborhood for matching, without expanding map solids.
+            int radiusX=Math.max(1,w/240),radiusY=Math.max(1,h/112);
+            boolean nearby=false;
+            for(int yy=Math.max(0,py-radiusY);yy<=Math.min(h-1,py+radiusY)&&!nearby;yy++)
+                for(int xx=Math.max(0,px-radiusX);xx<=Math.min(w-1,px+radiusX);xx++)if(evidence.solid[yy*w+xx]){nearby=true;break;}
+            result.registrationForeground[y*120+x]=nearby;
         }
         return evidence;
     }

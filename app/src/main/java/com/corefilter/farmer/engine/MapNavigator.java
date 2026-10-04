@@ -96,6 +96,8 @@ public final class MapNavigator {
     private final ArrayList<byte[]> screenTerrainRows=new ArrayList<>();
     private long lastTerrainCapture=-1,lastRoofView=-1;
     private int roofViews;
+    private long scoutStartedAt=-1,scoutRoofAt=-1;
+    private double scoutRoofX=Double.NaN,scoutRoofTravel;
     private int corridorDirection=1,corridor=1,returnTrack=-1,remainingEnemies=-1;
     private double corridorFloor=Double.NaN,returnX=Double.NaN,scoutX=Double.NaN,dropX=Double.NaN;
     private long returnAt=-1,returnDeadline=-1,dropAt=-1,releaseUntil=-1,lastTurn=-100000;
@@ -156,7 +158,7 @@ public final class MapNavigator {
         completedSector=0;activeSector=1;pendingAnchor=sectorCleared=false;
         controlGrounded=false;localSupportViews=0;previousFoot=Double.NaN;localSupportAt=localDriveAt=-1;
         lastControlAt=-1;corridorTravelMs=0;localDropSeen=localTurnPending=sectorTurnExpected=false;localScoutTravel=lastSupportedWorldY=Double.NaN;controlRows.clear();controlReasons.clear();
-        lastTerrainCapture=lastRoofView=-1;roofViews=0;screenPoseRows.clear();screenTerrainRows.clear();
+        lastTerrainCapture=lastRoofView=-1;scoutStartedAt=scoutRoofAt=-1;scoutRoofX=Double.NaN;roofViews=0;screenPoseRows.clear();screenTerrainRows.clear();
         directionChosenForDrop=directionChoiceAirSeen=false;
     }
     public Snapshot snapshot() { return new Snapshot(this); }
@@ -233,7 +235,7 @@ public final class MapNavigator {
         if(!directionChosenForDrop&&registered&&Double.isFinite(lastSupportedWorldY)&&py-lastSupportedWorldY>.18)localTurnPending=true;
         double[] enclosing=anchored?wallAhead(corridorDirection):null;
         boolean forwardClosed=localWall(corridorDirection)||enclosing!=null&&wallGap(enclosing,corridorDirection)<predictionDistance();
-        if((localTurnPending||sectorTurnExpected)&&forwardClosed&&localPassage(-corridorDirection)
+        if(!phase.equals("REMAINING_ENEMY_SWEEP")&&returnTrack<0&&(localTurnPending||sectorTurnExpected)&&forwardClosed&&localPassage(-corridorDirection)
                 &&(controlGrounded||now-lastJump>=normalFlightMs())) {
             turnIntoLowerCorridor();
             return act(corridorDirection,0,normalDuration(),"Lower cavern closes the old direction: traverse its visible open side");
@@ -241,7 +243,12 @@ public final class MapNavigator {
         if(directionChosenForDrop&&directionChoiceAirSeen&&!controlGrounded)
             return act(localWall(corridorDirection)?0:corridorDirection,0,350,"Direction selected for the lower cavern: finish the descent without another jump");
         if(registered&&controlGrounded)lastSupportedWorldY=py;
+        if(phase.equals("SCOUT_HIGH_CEILING")&&now-scoutStartedAt>Math.max(5000,jumpBudget()*localScoutInterval()+2500)){finishScout();}
         if(!anchored)return unregisteredPass();
+        // A return intent owns its direction until completed. Roof contact,
+        // scouting and drop inference must not silently cancel a missed-bot sweep.
+        if(phase.equals("REMAINING_ENEMY_SWEEP")){Decision sweep=remainingSweep();if(sweep!=null)return sweep;}
+        Track committedReturn=track(returnTrack);if(committedReturn!=null){Decision revisit=returnToEnemy(committedReturn);if(revisit!=null)return revisit;}
         if(entered&&phase.equals("ENTER"))phase="GROUND_SWEEP";
         double[] support=supportFloor();
         if(!Double.isFinite(corridorFloor)&&support!=null)corridorFloor=support[1]-bodyHalfH();
@@ -251,22 +258,19 @@ public final class MapNavigator {
         boolean blocked=wallContact(corridorDirection)||(wall!=null&&wallGap(wall,corridorDirection)<predictionDistance());
         highRoofPending=roofStillOutsideView();
         if(scoutDone&&Double.isFinite(scoutX)&&Math.abs(px-scoutX)>.35)scoutDone=false;
+        if(phase.equals("DROP_TO_CORRIDOR")&&Double.isFinite(dropX))return followDrop();
+        if(phase.equals("RETURN_GROUND")) {
+            int back=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
+            if(controlGrounded&&(Math.abs(px-returnX)<.13||wallContact(back)||now>=returnDeadline)){phase="GROUND_SWEEP";returnX=Double.NaN;}
+            else {int side=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
+                return act(wallContact(side)?0:side,0,350,"Return from the high-roof scout to the ground sweep; no extra jump");}
+        }
         if(phase.equals("SCOUT_HIGH_CEILING")&&scoutApertureSide()!=0){
             return act(scoutApertureSide(),0,180,"Roof ledge ends beside a visible shaft: align underneath its opening before the next Hookshot");
         }
         if(frame.ceilingReached||roofGap()<.055) {
             learningJump=false;if(phase.equals("SCOUT_HIGH_CEILING"))finishScout();
             return act(blocked?0:corridorDirection,0,350,"Roof clearance: release jump and descend to the ground pass");
-        }
-        if(phase.equals("DROP_TO_CORRIDOR")&&Double.isFinite(dropX))return followDrop();
-        if(phase.equals("REMAINING_ENEMY_SWEEP")){Decision sweep=remainingSweep();if(sweep!=null)return sweep;}
-        Track earlyReturning=track(returnTrack);
-        if(earlyReturning!=null){Decision revisit=returnToEnemy(earlyReturning);if(revisit!=null)return revisit;}
-        if(phase.equals("RETURN_GROUND")) {
-            int back=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
-            if(controlGrounded&&(Math.abs(px-returnX)<.13||wallContact(back)||now>=returnDeadline)){phase="GROUND_SWEEP";returnX=Double.NaN;}
-            else {int side=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
-                return act(wallContact(side)?0:side,0,350,"Return from the high-roof scout to the ground sweep; no extra jump");}
         }
         boolean atExit=blocked||opening!=null&&(opening[0]-px)*corridorDirection<.16
                 ||gateAt>=0&&now-gateAt<1500&&Double.isFinite(gateX)&&(gateX-px)*corridorDirection>=-.04&&Math.abs(gateX-px)<.20;
@@ -295,7 +299,7 @@ public final class MapNavigator {
         }
         if(highRoofPending&&entered&&sawAir)unseenRoofColumns.add(key(cellX(px+corridorDirection*.12),room));
         if(phase.equals("SCOUT_HIGH_CEILING")&&!highRoofPending){
-            if(roofViews<2)return act(blocked?0:corridorDirection,0,350,"Roof underside visible: inspect its hanging-enemy zone before descending");
+            if(!roofSweepObserved())return act(blocked?0:corridorDirection,0,350,"Roof underside visible: sweep its hanging-enemy zone before descending");
             finishScout();return act(0,0,350,"Roof search now visible: descend before completing the ground return");
         }
         if(phase.equals("SCOUT_HIGH_CEILING")) {
@@ -619,6 +623,7 @@ public final class MapNavigator {
         return new double[]{center,floor[1],side};
     }
     private Decision followDrop() {
+        Decision nextLedge=followLocalDrop();if(nextLedge!=null)return nextLedge;
         // The shaft-entry x is a waypoint, not a permanent constraint. Once
         // support is visible, leave through the lower passage without waiting
         // for two stable landing frames or another sector banner.
@@ -644,6 +649,29 @@ public final class MapNavigator {
         int support=0;
         for(double dx:new double[]{.07,.10,.13})for(double dy:new double[]{.02,.045,.07})if(localSolid(frame.playerX+side*dx,foot+dy))support++;
         return support>=3;
+    }
+    /** The next shaft gap is measured again at each ledge, not tied to its entry x. */
+    private Decision followLocalDrop(){
+        if(!frame.groundContactCandidate&&!controlGrounded)return null;
+        double gap=localDropGap();if(!Double.isFinite(gap))return null;
+        int side=Math.abs(gap-frame.playerX)<.025?0:gap>frame.playerX?1:-1;
+        if(side==0||localWall(side))return null;
+        if(dispatch&&blockedSince>=0&&now-blockedSince>2200)return null;
+        if(!phase.equals("DROP_TO_CORRIDOR"))dropAt=now;
+        pendingDrop=true;phase="DROP_TO_CORRIDOR";
+        if(registered)dropX=gap+cameraX;
+        return act(side,0,200,"Step across this shaft ledge toward the next measured downward gap");
+    }
+    private double localDropGap(){
+        if(!validTerrain(frame))return Double.NaN;
+        double foot=validCoordinate(frame.playerBottom)?frame.playerBottom:frame.playerY+bodyHalfH();
+        for(double distance:new double[]{.06,.09,.12,.16,.20})for(int side:new int[]{corridorDirection,-corridorDirection}){
+            double xx=frame.playerX+side*distance;if(xx<.05||xx>.95||localWall(side))continue;
+            int free=0,solid=0;for(double dx:new double[]{-.012,.012})for(double dy:new double[]{.04,.08,.12}){int v=localValue(xx+dx,foot+dy);if(v==1)free++;if(v==2)solid++;}
+            if(free<5||solid>0||localSolid(xx,foot+.018)||localSolid(xx,foot+.04))continue;
+            boolean route=true;for(double step=.025;step<distance;step+=.025)if(localSolid(frame.playerX+side*step,frame.playerY)||localSolid(frame.playerX+side*step,frame.playerY-bodyHalfH()*.5)){route=false;break;}
+            if(route)return xx;
+        }return Double.NaN;
     }
     private boolean dropDescentObserved(){return registered&&Double.isFinite(corridorFloor)&&py-corridorFloor>.12||localDropSeen&&controlGrounded;}
     private void commitObservedDrop(double[] floor) {
@@ -677,6 +705,7 @@ public final class MapNavigator {
         return true;
     }
     private Decision blockedPrimitive(double[] wall,double[] opening,double[] floor) {
+        Decision ledge=followLocalDrop();if(ledge!=null)return ledge;
         if(opening!=null){dropX=opening[0];pendingDrop=true;dropAt=now;phase="DROP_TO_CORRIDOR";return followDrop();}
         double[] behind=findOpening(-corridorDirection,floor);
         if(wall!=null&&behind!=null){dropX=behind[0];pendingDrop=true;dropAt=now;phase="DROP_TO_CORRIDOR";return followDrop();}
@@ -700,7 +729,13 @@ public final class MapNavigator {
         // ceiling was inspected. Only a fresh horizontal underside ends a scout.
         return validTerrain(frame)&&!frame.ceilingReached&&localRoofGap()>.10&&!localRoofVisible();
     }
-    private void beginScout(){scoutX=px;localScoutTravel=corridorTravelMs;phase="SCOUT_HIGH_CEILING";}
+    private void beginScout(){scoutX=px;localScoutTravel=corridorTravelMs;scoutStartedAt=now;scoutRoofAt=-1;scoutRoofX=Double.NaN;phase="SCOUT_HIGH_CEILING";}
+    private boolean roofSweepObserved(){
+        if(!localRoofVisible()){scoutRoofAt=-1;return false;}
+        if(scoutRoofAt<0){scoutRoofAt=now;scoutRoofX=px;scoutRoofTravel=corridorTravelMs;}
+        // Inspect laterally below the roof; a single glimpse is not the whole roof.
+        return roofViews>=2&&(now-scoutRoofAt>=900||registered&&Math.abs(px-scoutRoofX)>=2./COLS||Math.abs(corridorTravelMs-scoutRoofTravel)>=500);
+    }
     private void turnIntoLowerCorridor(){
         directionChosenForDrop=!controlGrounded||sectorTurnExpected;directionChoiceAirSeen=!controlGrounded;
         corridorDirection=-corridorDirection;corridor++;lastTurn=now;corridorTravelMs=0;
@@ -773,6 +808,7 @@ public final class MapNavigator {
         if(touching(t,frame)){markContact(t);returnTrack=-1;phase="GROUND_SWEEP";return act(corridorDirection,0,t.heavy>.6?260:180,"Named missed enemy contact attempted; resume the committed corridor direction");}
         goal=new Goal(t.x,t.y,"named missed enemy "+t.id,t.id);
         int side=Math.abs(t.x-px)>.035?(t.x>px?1:-1):0;
+        if(wallContact(side)&&controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=normalFlightMs())return act(side,1,350,"Named enemy return: jump across the low step rather than abandoning the target");
         if(wallContact(side)){t.deferredUntil=now+2500;returnTrack=-1;phase="GROUND_SWEEP";return null;}
         if(dispatch&&blockedSince>=returnAt&&now-blockedSince>3000)
             return decision(0,0,0,true,"Named enemy return made no horizontal progress; preserve the map and inspect the passage");
@@ -785,7 +821,11 @@ public final class MapNavigator {
         for(Track t:tracks)if(t.section==room&&t.corridor==corridor&&t.matched&&touching(t,frame))markContact(t);
         int side=-corridorDirection;
         boolean reached=Double.isFinite(corridorStartX)&&(px-corridorStartX)*corridorDirection<.08;
-        if(reached||wallContact(side)){
+        boolean frontObstacle=wallContact(side)||localWall(side);
+        // A low step is not the corridor's rear boundary. Clear it before ending
+        // the sweep, otherwise a single missed enemy can remain behind it forever.
+        if(frontObstacle&&controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=normalFlightMs())return act(side,1,350,"Backtracking meets a low ledge: jump through it and keep searching");
+        if(reached||frontObstacle){
             emptySweeps++;phase="GROUND_SWEEP";remainingSweepAt=-1;
             return act(corridorDirection,0,normalDuration(),"Ground return sweep finished: sweep forward again and re-read the enemy count");
         }
@@ -799,10 +839,13 @@ public final class MapNavigator {
     private Decision unregisteredPass() {
         if(!entered&&corridorTravelMs>=900)entered=true;
         int side=phase.equals("REMAINING_ENEMY_SWEEP")?-corridorDirection:corridorDirection;
-        if(phase.equals("REMAINING_ENEMY_SWEEP")&&(remainingEnemies==0||corridorTravelMs<80||localWall(side))){
-            phase="GROUND_SWEEP";remainingSweepAt=-1;emptySweeps++;side=corridorDirection;
+        if(phase.equals("REMAINING_ENEMY_SWEEP")){
+            if(remainingEnemies==0||corridorTravelMs<80||localWall(side)&&!localJumpFits(side)){
+                phase="GROUND_SWEEP";remainingSweepAt=-1;emptySweeps++;side=corridorDirection;
+            }else return act(side,controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0,350,"Keep the missed-enemy return committed through camera gaps; jump through low ledges");
         }
         if(phase.equals("DROP_TO_CORRIDOR")){
+            Decision ledge=followLocalDrop();if(ledge!=null)return ledge;
             if(dropDescentObserved()&&localSupportedExit(-corridorDirection)&&!localSupportedExit(corridorDirection)){
                 turnIntoLowerCorridor();return act(corridorDirection,0,350,"Leave the shaft through the visible lower passage; map alignment is optional");
             }
@@ -823,11 +866,12 @@ public final class MapNavigator {
         }
         if(entered&&remainingEnemies>0&&(localWall(side)||frame.gate&&validCoordinate(frame.gateX)&&Math.abs(frame.gateX-frame.playerX)<.22)&&!phase.equals("SCOUT_HIGH_CEILING")&&!phase.equals("REMAINING_ENEMY_SWEEP")){
             phase="REMAINING_ENEMY_SWEEP";remainingSweepAt=now;side=-corridorDirection;
+            return act(side,controlGrounded&&usedJumps==0&&localJumpFits(side)?1:0,350,"Positive enemy count: begin a committed return sweep before any roof or drop probe");
         }
         Track returning=track(returnTrack);
         if(returning!=null&&phase.equals("REVISIT_ENEMY")){
             side=lastDirection;
-            if(localEnemyContact()||localWall(side)||now>returnDeadline){
+            if(localEnemyContact()||localWall(side)&&!localJumpFits(side)||now>returnDeadline){
                 if(localEnemyContact())markContact(returning);
                 returning.deferredUntil=now+BURN_GRACE_MS;returnTrack=-1;phase="GROUND_SWEEP";side=corridorDirection;
             }
@@ -839,6 +883,7 @@ public final class MapNavigator {
         }
         if(entered&&!controlGrounded&&sawAir&&roofStillOutsideView()&&!scoutDone&&!phase.equals("DROP_TO_CORRIDOR")&&!phase.equals("REMAINING_ENEMY_SWEEP")&&now-lastJump>=localScoutInterval()&&!phase.equals("SCOUT_HIGH_CEILING"))beginScout();
         if(localWall(side)&&!phase.equals("SCOUT_HIGH_CEILING")) {
+            Decision ledge=followLocalDrop();if(ledge!=null)return ledge;
             if(localDriveAt<0)localDriveAt=now;
             // A low ledge can be jumped. A tall enclosing wall cannot.
             if(controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=normalFlightMs())
@@ -850,8 +895,8 @@ public final class MapNavigator {
         if(phase.equals("SCOUT_HIGH_CEILING")&&scoutApertureSide()!=0)return act(scoutApertureSide(),0,180,"Align under the clear shaft beside this roof ledge before climbing");
         if(frame.ceilingReached||localRoofGap()<.055){if(phase.equals("SCOUT_HIGH_CEILING"))finishScout();return act(side,0,350,"Visible roof: move along the cavern without another upward pulse");}
         if(phase.equals("SCOUT_HIGH_CEILING")){
-            if(localRoofVisible()&&roofViews<2)return act(side,0,350,"Roof underside visible: coast for another ceiling inspection without spending a Hookshot");
-            if(roofViews>=2||usedJumps>=jumpBudget()){finishScout();return act(side,0,350,"Roof inspected or ascent charges spent: descend to the ground sweep");}
+            if(localRoofVisible()&&!roofSweepObserved())return act(side,0,350,"Roof underside visible: coast for another ceiling inspection without spending a Hookshot");
+            if(roofSweepObserved()||usedJumps>=jumpBudget()){finishScout();return act(side,0,350,"Roof inspected or ascent charges spent: descend to the ground sweep");}
             int pulse=measuredAirPulse()?1:0;
             return act(scoutDirection(),pulse,350,"Scout the hidden high roof with one separate Hookshot; climb vertically beside a wall");
         }

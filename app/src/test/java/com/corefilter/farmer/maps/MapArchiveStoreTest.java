@@ -18,6 +18,16 @@ import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class) @Config(sdk=35)
 public class MapArchiveStoreTest {
+    @Test public void restartingSharingReusesTheBookmarkAndDoesNotDeleteFiles()throws Exception{
+        File saved=MapArchiveStore.save(context,snapshot(),"completed",1);String link,token;int port;
+        try(MapTransferServer server=new MapTransferServer(context,InetAddress.getByName("127.0.0.1"))){
+            link=server.url();URL url=new URL(link);port=url.getPort();token=url.getPath().split("/")[1];
+        }
+        try(MapTransferServer restarted=new MapTransferServer(context,InetAddress.getByName("127.0.0.1"),port,token)){
+            assertEquals(link,restarted.url());HttpURLConnection request=(HttpURLConnection)new URL(link+"api/maps").openConnection();
+            assertEquals(200,request.getResponseCode());request.disconnect();assertTrue(saved.exists());
+        }
+    }
     @Test public void manualFramesAreIncludedInSavedBundleAndRecoveredAfterInterruption()throws Exception{
         Context c=RuntimeEnvironment.getApplication();FarmEngine.Config config=new FarmEngine.Config();config.manualMapping=true;FarmEngine engine=new FarmEngine(config);
         FarmEngine.Frame frame=new FarmEngine.Frame(1000,"com.Overcurve.Corebound","",null);frame.gameplay=true;frame.cameraConfidence=frame.playerConfidence=.9;frame.cameraX=frame.cameraY=0;frame.playerX=.5;frame.playerY=.6;

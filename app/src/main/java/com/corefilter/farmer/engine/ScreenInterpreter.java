@@ -46,7 +46,7 @@ public final class ScreenInterpreter {
     private static void readRemainingEnemies(FarmEngine.Frame f,List<FarmEngine.Token> tokens) {
         int found=-1;double confidence=0;
         for(FarmEngine.Token label:tokens) {
-            if(!hud(label))continue;
+            if(!counterArea(label,f))continue;
             String s=clean(label.text);Matcher m=COUNTER.matcher(s);
             int value=-1;
             if(m.matches())value=Integer.parseInt(m.group(1));
@@ -58,7 +58,7 @@ public final class ScreenInterpreter {
                 int adjacent=-1;
                 for(FarmEngine.Token number:tokens) {
                     String numeric=clean(number.text).replaceFirst("^(?:remaining|left)\\s*[:=-]?\\s*","");
-                    if(number==label||!hud(number)||!numeric.matches("\\d{1,2}"))continue;
+                    if(number==label||!counterArea(number,f)||!numeric.matches("\\d{1,2}"))continue;
                     if(Math.abs(number.y()-label.y())>.025||number.left<label.right-.015||number.left-label.right>.16)continue;
                     if(adjacent>=0){adjacent=-2;break;}
                     adjacent=Integer.parseInt(numeric);
@@ -70,6 +70,11 @@ public final class ScreenInterpreter {
             found=value;confidence=Math.max(confidence,candidateConfidence);
         }
         f.remainingEnemies=found;f.remainingEnemiesConfidence=confidence;
+    }
+    private static boolean counterArea(FarmEngine.Token t,FarmEngine.Frame f){
+        return hud(t)||f.gate&&Double.isFinite(f.gateX)&&Double.isFinite(f.gateY)
+            &&t.left>=0&&t.right<=1&&t.top>=0&&t.bottom<=1&&t.right>t.left&&t.bottom>t.top
+            &&Math.abs(t.x()-f.gateX)<.23&&Math.abs(t.y()-f.gateY)<.22;
     }
     private static boolean hud(FarmEngine.Token t) {
         return Double.isFinite(t.top)&&Double.isFinite(t.bottom)&&Double.isFinite(t.left)&&Double.isFinite(t.right)

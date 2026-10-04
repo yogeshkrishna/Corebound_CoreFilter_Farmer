@@ -6,6 +6,13 @@ import static org.junit.Assert.*;
 
 /** Generated pixels only: no videos, screenshots, or external image fixtures. */
 public class PixelVisionGeometryTest {
+    @Test public void overlayOcclusionCannotBecomeFreeSpaceRockOrAnEnemy(){
+        int[] p=scene();rect(p,230,90,100,40,ROCK);rect(p,250,100,30,20,0xffff2020);
+        PixelVision.Result r=PixelVision.analyse(p,W,H,new double[][]{{.38,.32,.56,.50}});
+        for(int y=8;y<12;y++)for(int x=19;x<26;x++)assertEquals(0,r.terrainCells[y*r.terrainCols+x]);
+        for(double[] box:r.enemyBoxes)assertFalse(box[0]<.56&&box[2]>.38&&box[1]<.50&&box[3]>.32);
+        assertTrue(PixelVision.occluded(.45,.4,r));assertFalse(PixelVision.occluded(.7,.4,r));
+    }
     private static final int W=600,H=270,ROCK=0xff5a5a66;
     private int[] scene(){int[] p=new int[W*H];Arrays.fill(p,0xff08080a);rect(p,25,8,150,18,0xffd2dc28);return p;}
     private void rect(int[] p,int x,int y,int width,int height,int color){

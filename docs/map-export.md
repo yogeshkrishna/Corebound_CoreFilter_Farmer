@@ -8,7 +8,7 @@ The picture is a union of observed floors, ceilings, side walls, player paths, c
 
 1. Connect your phone and laptop to the same Wi-Fi network.
 2. Open Ceiling Scout and tap **Saved maps & Wi-Fi transfer**, then **Start Wi-Fi transfer**.
-3. Copy the displayed link and open it in your laptop's browser. Keep this page open on your phone throughout the transfer. The phone keeps its screen awake while sharing.
+3. Copy the displayed link and open it in your laptop's browser. You can close the map page or return to the game. A background sharing notification provides an explicit Stop control.
 4. On the laptop page, click **Download receiver**. Open PowerShell on your laptop and run:
 
    ```powershell
@@ -18,7 +18,7 @@ The picture is a union of observed floors, ceilings, side walls, player paths, c
    This command runs that downloaded helper for this invocation. If your browser added a number to the filename, use its actual filename instead.
 
 5. The receiver saves ZIPs in **Documents\Ceiling Scout Maps**, checks their file sizes and SHA-256 checksums, then sends a receipt for each verified file. Only that receipt removes the corresponding phone copy.
-6. Tap **Stop Wi-Fi transfer** or close the phone's map page when finished. Leaving the app stops sharing. The stored queue is unaffected.
+6. Tap **Stop Wi-Fi transfer** or **Stop** in the sharing notification when finished. Closing the page and leaving the app do not stop sharing. The stored queue is unaffected.
 
 If you already have the repository helper, you can run it with the phone's current link:
 
@@ -44,7 +44,7 @@ X units are captured viewport widths. Y units are captured viewport heights and 
 
 Bounded model/export limits are recorded in the JSON retention fields. The picture supports up to 16 section panels; additional retained geometry remains in JSON and is identified explicitly. Low-confidence boundaries use dashed lines. A blue dot marks the first observed spawn/path point in the first section and a local anchor in later unlinked sections. Orange dots mark observed horizontal path reversals, including backtracking toward enemies.
 
-The server binds to the phone's Wi-Fi IPv4 address only and uses a new random sharing token each time. Files are never sent to a cloud service. Devices with the current sharing link can access the queue while sharing is open. SHA-256 verification prevents a partial or changed download from being acknowledged as the saved bundle. Interrupted transfers, wrong receipts, app restarts, and server shutdowns do not remove unacknowledged bundles.
+The server binds to the phone's Wi-Fi IPv4 address only and retains a random sharing token and listening port in private app settings. Closing or reopening the dashboard does not replace the link. Restarting sharing reuses the saved port when available; an occupied port or a changed Wi-Fi address can require a changed link. Files are never sent to a cloud service. Devices with the current sharing link can access the queue while sharing is open. SHA-256 verification prevents a partial or changed download from being acknowledged as the saved bundle. Interrupted transfers, wrong receipts, app restarts, and server shutdowns do not remove unacknowledged bundles.
 
 ## Temporary manual mapping mode (0.4.4)
 

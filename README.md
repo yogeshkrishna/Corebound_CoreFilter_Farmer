@@ -4,7 +4,9 @@ A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, 
 
 **[Download the latest APK](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** · Android 11 or later
 
-Version 0.4.4 adds a temporary **Map while I play** mode alongside the farmer. The mapper sends no automated touches: you play, scout ceilings and handle menus/ads. It saves the observed union map and sampled clean gameplay images with their poses. Press **Save** to keep a partial run; a recognized end screen saves a finished run automatically. Interrupted image recordings are recovered when controls reconnect. Farmer fixes let a drop leave its old waypoint through an observed lower passage, step past a platform edge wrongly classified as a wall, and align under a visible shaft beside a roof ledge. The overlay retains Run/Pause or Record/Save, Build, Calibrate and Stop; preview, capture settings and laptop transfer live in the app.
+Version 0.4.7 fixes capture-driven overlay flashing, gives enemy return sweeps priority over roof scouting, remeasures downward gaps at each shaft ledge, and moves Wi-Fi sharing into a background service with a saved link. Gameplay navigation no longer waits for periodic text recognition.
+
+A temporary **Map while I play** mode alongside the farmer. The mapper sends no automated touches: you play, scout ceilings and handle menus/ads. It saves the observed union map and sampled clean gameplay images with their poses. Press **Save** to keep a partial run; a recognized end screen saves a finished run automatically. Interrupted image recordings are recovered when controls reconnect. Farmer fixes let a drop leave its old waypoint through an observed lower passage, step past a platform edge wrongly classified as a wall, and align under a visible shaft beside a roof ledge. The overlay retains Run/Pause or Record/Save, Build, Calibrate and Stop; preview, capture settings and laptop transfer live in the app.
 
 ## Install this update
 
@@ -30,7 +32,7 @@ If updating from 0.2.0 after the repository rename, choose **Update source**, en
 - **Run/Pause:** farming continues until stopped by default. Pause prevents new touches; an already issued batch releases within 700 ms.
 - **••• → Build & Hookshots:** pauses farming and opens equipment notes, jump count, tap spacing, movement duration, contact time, run watchdog, and ad preference.
 - **Calibrate controls:** saves the movement and jump touch positions.
-- **Screen tools in the app:** preview freezes the captured game image without stretching its proportions. Compatibility capture briefly hides the bar before full-display capture and is enabled automatically once in 0.4.6. Optional window capture accepts only native-size buffers and falls back to display capture on mismatched geometry. Frames captured across rotation or a foreground change are discarded before analysis.
+- **Screen tools in the app:** preview freezes the captured game image without stretching its proportions. Compatibility capture leaves the bar visible and masks its occupied rectangle from OCR, enemies, terrain and camera registration. Covered terrain remains unknown. During an ad the bar moves away from close-button corners and returns afterward. Optional window capture accepts only native-size buffers and falls back to display capture on mismatched geometry. Frames captured across rotation or a foreground change are discarded before analysis.
 - **Stop & hide:** stops farming and removes the bar. Reopen it from the home screen. Drag its status text to move it.
 
 The navigator enters the corridor before selecting backward targets, jump-moves through visible areas, and uses additional height only for hidden roofs. Ceiling inspection is based on a clear view of its underside rather than proximity. Downward passages and real enclosing walls establish corridor turns; screen edges do not. Ember contact starts a burn attempt, with unresolved targets retained for a deliberate return sweep. A readable remaining-enemy count helps direct that sweep; a visible gate does not start an animation wait. See [controller details](docs/navigation.md).
@@ -41,7 +43,7 @@ This update temporarily offers **Map while I play** and **Use farmer** in the ap
 
 Manual bundles additionally retain clean gameplay JPEGs and measured poses, sampled at least 700 ms apart, up to 900 images or 32 MiB per recording. Interrupted staged recordings are recovered when controls reconnect; their lost in-memory atlas stays marked unknown. The images provide evidence for later reconstruction when terrain recognition or camera alignment fails. This update does not automatically replay a human route.
 
-After runs, open **Saved maps & Wi-Fi transfer → Start Wi-Fi transfer** and keep that page open. Connect the laptop to the same Wi-Fi and open the displayed link. The laptop page provides a receiver for Windows and previews of saved maps. The receiver saves each ZIP, verifies its checksum, and acknowledges it before the app deletes that exact phone copy. Failed or interrupted transfers keep the phone files.
+After runs, open **Saved maps & Wi-Fi transfer → Start Wi-Fi transfer** ; sharing continues when you close that page or open the game. Connect the laptop to the same Wi-Fi and open the displayed link. The laptop page provides a receiver for Windows and previews of saved maps. The receiver saves each ZIP, verifies its checksum, and acknowledges it before the app deletes that exact phone copy. Failed or interrupted transfers keep the phone files.
 
 Each ZIP contains **map.png** and **map.json**: observed floor, ceiling and wall boundaries, the traversed path, ceiling inspection, enemy observations, coordinate units, confidence, build settings and the latest 1,200 steering decisions. Pausing an active run also saves its partial record. Unknown areas remain blank. Camera gaps that cannot be linked appear in separate panels. These records support future investigation of a fixed layout pool; the current controller does not assume one or reuse an unverified layout. See [transfer steps](docs/map-export.md).
 
@@ -53,7 +55,7 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.6.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.7.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 

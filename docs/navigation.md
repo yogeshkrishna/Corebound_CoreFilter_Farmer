@@ -1,4 +1,4 @@
-# Corridor controller, version 0.4.4
+# Corridor controller, version 0.4.7
 
 The controller commits to a direction through each cavern. Its normal action is forward movement with a base jump when grounded and when the measured trajectory clears the roof. It does not navigate an air grid or spend all Hookshots as a repeated jump batch.
 
@@ -17,7 +17,7 @@ Temporary manual mapping bypasses the controller entirely. It records terrain, c
 
 In 0.4.2, unknown background above the crawler no longer suppresses a roof scout. A visible roof must supply a horizontal underside across the crawler's vicinity; one pillar cell does not establish a roof. A scout coasts for a second fresh roof view instead of immediately falling after its first glimpse. Roof contact still releases upward input immediately.
 
-Sector-completed banners are included in asynchronous upper-half text reading. A new completion or a measured descent retains a turn candidate independently of floor registration. A closing wall in the old direction plus measured open space behind it permits a committed reversal. State is cleared together so the same banner cannot flip it twice. A lower landing by itself does not reverse an already corrected direction.
+Sector-completed banners are included in asynchronous full-view text reading. A new completion or a measured descent retains a turn candidate independently of floor registration. A closing wall in the old direction plus measured open space behind it permits a committed reversal. State is cleared together so the same banner cannot flip it twice. A lower landing by itself does not reverse an already corrected direction.
 
 A visible gate does not start an animation timer. A zero count permits onward movement, while possible hanging enemies and uninspected roofs retain their own records. Ordinary enemy counts do not prove that a Spectrum was found.
 
@@ -45,6 +45,16 @@ The current controller starts a fresh atlas each run. Stored bundles are for fut
 
 The JSON additionally retains up to 450 terrain grids sampled at least 700 ms apart, with capture times, camera confidence, player position and corridor direction. Missing camera offsets are null. These local observations survive camera gaps without being pasted into the world atlas at invented positions.
 
-See [verification](verification-0.4.4.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+See [verification](verification-0.4.7.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
 
-In 0.4.3, a camera-origin recovery retains an active scout or descent. Full-screen OCR periodically checks gameplay and always checks ads. Install-card evidence overrides false gameplay pixels. Two fresh confirmed Corebound views end an ad session. Pausing an ad preserves its state for resuming and bounded Play Store recovery. Overlay menus suspend new decisions and captures until dismissed; rotation clamps the bar and menu to the current display.
+In 0.4.3, a camera-origin recovery retains an active scout or descent. Gameplay text recognition runs independently of steering and checks the full view; ads and menu decisions still wait for text recognition. Install-card evidence overrides false gameplay pixels. Two fresh confirmed Corebound views end an ad session. Pausing an ad preserves its state for resuming and bounded Play Store recovery. Overlay menus suspend new decisions and captures until dismissed; rotation clamps the bar and menu to the current display.
+
+## Changes in 0.4.7
+
+A committed remaining-enemy sweep and named-target return are evaluated before generic roof handling. Camera gaps preserve that intent, and a low step is jumped rather than mistaken for the rear boundary. A fresh labelled count near a measured gate is accepted below the HUD too; unrelated off-HUD text is rejected.
+
+At each supported shaft ledge, local geometry is searched on both sides for a reachable downward gap. The old entry waypoint is replaced by that measurement. A failed ledge probe cannot keep resetting its no-progress deadline. Returning to ground and following a drop also precede generic roof-contact handling.
+
+Roof scouting retains its start time across intermediate landings. A bounded climb returns to ground even if landings recharge the jump budget; timeout never establishes roof coverage. Two roof views plus lateral movement or a bounded inspection interval are required before finishing a visible-roof sweep. Unknown columns remain unresolved.
+
+Full-display capture keeps the bar visible and excludes its rectangle from all image measurements. Masked grid cells remain unknown. Camera landmarks include the neighborhood of thin verified faces; matching requires agreement in each sufficiently populated horizontal half, so independent deformation cannot supply camera displacement.

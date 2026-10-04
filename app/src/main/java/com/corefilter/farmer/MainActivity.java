@@ -31,7 +31,6 @@ public final class MainActivity extends Activity {
         if(getIntent().getBooleanExtra("openMaps",false)){getIntent().removeExtra("openMaps");showSavedMaps();}
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);}
-    @Override protected void onStop(){if(mapExport!=null)mapExport.stop();super.onStop();}
 
     private void home(){
         FrameLayout root=new FrameLayout(this);root.setTag("dashboard-insets");root.setBackgroundColor(Ui.BG);
@@ -80,7 +79,7 @@ public final class MainActivity extends Activity {
         step(guide,"3","Start your selected mode","Run farms. Record maps while you play. Save keeps your map.");main.addView(guide);
         main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.4.6 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.4.7 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){

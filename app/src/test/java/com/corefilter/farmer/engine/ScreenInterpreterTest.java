@@ -5,6 +5,12 @@ import java.util.Arrays;
 import static org.junit.Assert.*;
 
 public class ScreenInterpreterTest {
+    @Test public void labelledCountBesideVisibleGateCanBeBelowTheHud(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;v.gate=true;v.gateX=.75;v.gateY=.55;
+        java.util.List<FarmEngine.Token> tokens=Arrays.asList(new FarmEngine.Token("Enemies left: 1",.61,.46,.89,.51));
+        assertEquals(1,ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",tokens,v).remainingEnemies);
+        v.gate=false;assertEquals(-1,ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",tokens,v).remainingEnemies);
+    }
     @Test public void installCardOverridesFalseGameplayPixels(){
         PixelVision.Result v=new PixelVision.Result();v.gameplay=true;v.playerConfidence=.9;v.controlsDetected=true;
         FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(new FarmEngine.Token("Install",.55,.4,.8,.5),new FarmEngine.Token("Google Play",.36,.88,.50,.95)),v);

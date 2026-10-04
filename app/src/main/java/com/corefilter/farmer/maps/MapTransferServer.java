@@ -11,16 +11,20 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import org.json.*;
 
-/** Short-lived local-only capability server. It has no cloud client and accepts no filesystem paths. */
+/** Local-only capability server owned by the background sharing service. It has no cloud client and accepts no filesystem paths. */
 public final class MapTransferServer implements AutoCloseable {
     private final Context context;private final ServerSocket server;private final String token,base;
     private final Set<Socket> clients=ConcurrentHashMap.newKeySet();
     private final ThreadPoolExecutor workers=new ThreadPoolExecutor(2,2,0,TimeUnit.SECONDS,new ArrayBlockingQueue<>(4),r->{Thread t=new Thread(r,"map-transfer-client");t.setDaemon(true);return t;});
     private volatile boolean stopped;private final Thread acceptor;
     public MapTransferServer(Context context,InetAddress wifiAddress)throws IOException {
+        this(context,wifiAddress,0,null);
+    }
+    public MapTransferServer(Context context,InetAddress wifiAddress,int port,String capability)throws IOException {
         if(!(wifiAddress instanceof Inet4Address)||(!wifiAddress.isSiteLocalAddress()&&!wifiAddress.isLoopbackAddress()))throw new IOException("A local Wi-Fi IPv4 address is required");
-        this.context=context.getApplicationContext();byte[] secret=new byte[32];new SecureRandom().nextBytes(secret);token=Base64.getUrlEncoder().withoutPadding().encodeToString(secret);
-        server=new ServerSocket();server.setReuseAddress(true);server.bind(new InetSocketAddress(wifiAddress,0),4);
+        if(capability!=null&&!capability.matches("[A-Za-z0-9_-]{43}"))throw new IOException("Invalid sharing capability");
+        this.context=context.getApplicationContext();byte[] secret=new byte[32];new SecureRandom().nextBytes(secret);token=capability==null?Base64.getUrlEncoder().withoutPadding().encodeToString(secret):capability;
+        server=new ServerSocket();try{server.setReuseAddress(true);server.bind(new InetSocketAddress(wifiAddress,port),4);}catch(IOException e){server.close();workers.shutdownNow();throw e;}
         base="http://"+wifiAddress.getHostAddress()+":"+server.getLocalPort()+"/"+token;
         acceptor=new Thread(this::accept,"map-transfer-listener");acceptor.setDaemon(true);acceptor.start();
     }

@@ -46,6 +46,7 @@ public final class FarmerService extends AccessibilityService {
     }
     private LinearLayout bar;private TextView status;private Button runButton;private View captureMarker;private WindowManager.LayoutParams barParams;
     private PopupWindow menuPopup;
+    private int adBarX=-1,adBarY=-1;
     private long lastFullOcrAt=-10000,foregroundMissingAt=-1,externalAdAt=-1;
     private boolean overlayWanted=true,compatibilityCapture=false,previewRequested=false;
     private long lastOcrAt=0,lastScreenshotAt=0,earliestGameplayObservationAt=0;private int intervalErrors=0,slowFrames=0;
@@ -55,7 +56,7 @@ public final class FarmerService extends AccessibilityService {
     private View calibration;private CapturePreview preview;private boolean running=false,manualMapping=false,inFlight=false,gestureBusy=false,destroyed=false;
     private int generation=0,captureErrors=0,screenW=0,screenH=0;private long nextCapture=0;
     private String lastReason="Ready",lastPackage="";private long lastLogged=0;
-    private final Runnable ticker=new Runnable(){public void run(){if(destroyed)return;if(running&&!inFlight&&SystemClock.elapsedRealtime()>=nextCapture)capture(false);handler.postDelayed(this,50);}};
+    private final Runnable ticker=new Runnable(){public void run(){if(destroyed)return;if(running&&!inFlight&&SystemClock.elapsedRealtime()>=nextCapture)capture(false);handler.postDelayed(this,20);}};
 
     @Override protected void onServiceConnected(){instance=this;wm=(WindowManager)getSystemService(WINDOW_SERVICE);SharedPreferences capturePrefs=getSharedPreferences("capture",0);if(!capturePrefs.getBoolean("geometryFix",false))capturePrefs.edit().putBoolean("compatibility",true).putBoolean("geometryFix",true).apply();compatibilityCapture=capturePrefs.getBoolean("compatibility",true);recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);mapWriter.execute(()->{try{int n=MapArchiveStore.recoverManual(getApplicationContext());if(n>0)handler.post(()->log("Recovered "+n+" interrupted manual recording(s)"));}catch(Exception ex){handler.post(()->log("Unfinished mapping frames retained; recovery will retry after controls reconnect"));}});reloadProfile();showOverlay();handler.post(ticker);log("Connected. No touches until Run.");}
     @Override public void onAccessibilityEvent(AccessibilityEvent e){}
@@ -102,6 +103,12 @@ public final class FarmerService extends AccessibilityService {
     private void log(String s){long now=SystemClock.elapsedRealtime();if(!logs.isEmpty()&&logs.peekLast().endsWith(s)&&now-lastLogged<3000)return;lastLogged=now;logs.addLast(android.text.format.DateFormat.format("HH:mm:ss",new java.util.Date())+"  "+s);while(logs.size()>80)logs.removeFirst();getSharedPreferences("session",0).edit().putString("log",logText()).apply();}
     public String logText(){StringBuilder b=new StringBuilder();for(String s:logs)b.append(s).append('\n');return b.toString();}
     private String foregroundPackage(){List<AccessibilityWindowInfo> windows=getWindows();for(AccessibilityWindowInfo w:windows){if(w.getType()!=AccessibilityWindowInfo.TYPE_APPLICATION||(!w.isActive()&&!w.isFocused()))continue;AccessibilityNodeInfo n=w.getRoot();if(n==null)continue;CharSequence p=n.getPackageName();String s=p==null?"":p.toString();n.recycle();if(!s.isEmpty()&&!s.equals(getPackageName()))return s;}AccessibilityNodeInfo n=getRootInActiveWindow();if(n==null)return "";String p=n.getPackageName()==null?"":n.getPackageName().toString();n.recycle();return p;}
+    private void positionBarForAd(boolean ad){
+        if(bar==null||barParams==null)return;
+        if(ad&&adBarX<0){adBarX=barParams.x;adBarY=barParams.y;Rect display=displayBounds();barParams.x=Math.max(0,(display.width()-barParams.width)/2);barParams.y=Math.max(0,(display.height()-barParams.height)/2);wm.updateViewLayout(bar,barParams);}
+        else if(!ad&&adBarX>=0){Rect display=displayBounds();barParams.x=Math.max(0,Math.min(display.width()-barParams.width,adBarX));barParams.y=Math.max(0,Math.min(display.height()-barParams.height,adBarY));adBarX=adBarY=-1;wm.updateViewLayout(bar,barParams);}
+    }
+    private Rect overlayBounds(){if(bar==null||bar.getVisibility()!=View.VISIBLE)return new Rect();int[] xy=new int[2];bar.getLocationOnScreen(xy);int margin=Ui.dp(this,5);return new Rect(xy[0]-margin,xy[1]-margin,xy[0]+bar.getWidth()+margin,xy[1]+bar.getHeight()+margin);}
     private Rect displayBounds(){Display d=((DisplayManager)getSystemService(DISPLAY_SERVICE)).getDisplay(Display.DEFAULT_DISPLAY);if(d==null)return wm.getMaximumWindowMetrics().getBounds();Point size=new Point();d.getRealSize(size);return new Rect(0,0,size.x,size.y);}
     private int displayRotation(){Display d=((DisplayManager)getSystemService(DISPLAY_SERVICE)).getDisplay(Display.DEFAULT_DISPLAY);return d==null?-1:d.getRotation();}
     private void retryGeometry(boolean calibrationRequest,String reason){inFlight=false;restoreBar();pendingFrames.clear();nextCapture=SystemClock.elapsedRealtime()+400;setStatus(reason);if(++geometryRetries>=8){pause("Capture geometry did not settle; open Corebound in landscape and retry");return;}if(calibrationRequest||previewRequested)handler.postDelayed(()->capture(calibrationRequest),450);}
@@ -116,15 +123,15 @@ public final class FarmerService extends AccessibilityService {
         // never an OCR screenshot or game coordinates.
         if(STORE.equals(pkg)){if(forCalibration||manualMapping){pause("Return to Corebound");return;}long now=SystemClock.elapsedRealtime();FarmEngine.Action a=engine.next(new FarmEngine.Frame(now,pkg,"",Collections.emptyList()));setStatus(a.reason);log(a.kind+": "+a.reason);execute(a,new PixelVision.Result(),pkg,generation);nextCapture=now+1000;return;}
         final int ticket=generation;final long capturedAt=SystemClock.elapsedRealtime();final String capturePackage=pkg;final TemporalVision captureTemporal=temporal;final boolean captureMapping=manualMapping;
-        if(capturedAt-lastScreenshotAt<350){nextCapture=lastScreenshotAt+350;if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),350);return;}
-        inFlight=true;lastScreenshotAt=capturedAt;nextCapture=capturedAt+350;
+        if(capturedAt-lastScreenshotAt<340){nextCapture=lastScreenshotAt+340;if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),350);return;}
+        inFlight=true;lastScreenshotAt=capturedAt;nextCapture=capturedAt+340;
         int windowId=-1;Rect windowBounds=null;
         if(Build.VERSION.SDK_INT>=34&&!compatibilityCapture)for(AccessibilityWindowInfo w:getWindows())if(w.getType()==AccessibilityWindowInfo.TYPE_APPLICATION&&(w.isActive()||w.isFocused())){AccessibilityNodeInfo node=w.getRoot();if(node!=null){boolean match=capturePackage.contentEquals(node.getPackageName()==null?"":node.getPackageName());node.recycle();if(match){windowId=w.getId();windowBounds=new Rect();w.getBoundsInScreen(windowBounds);break;}}}
-        final Rect capturedWindow=windowBounds;final Rect requestedDisplay=displayBounds();final int requestedRotation=displayRotation();
+        final Rect capturedWindow=windowBounds;final Rect controlsAtRequest=overlayBounds();final Rect requestedDisplay=displayBounds();final int requestedRotation=displayRotation();
         TakeScreenshotCallback callback=new TakeScreenshotCallback(){
             @Override public void onSuccess(ScreenshotResult result){
                 HardwareBuffer buffer=result.getHardwareBuffer();Bitmap hardware=null,copy=null;
-                try{hardware=Bitmap.wrapHardwareBuffer(buffer,result.getColorSpace());if(hardware==null)throw new IllegalStateException("Empty screenshot");copy=hardware.copy(Bitmap.Config.ARGB_8888,false);}catch(Exception ex){inFlight=false;restoreBar();pause("Cannot read screen");return;}finally{if(hardware!=null)hardware.recycle();buffer.close();}
+                try{hardware=Bitmap.wrapHardwareBuffer(buffer,result.getColorSpace());if(hardware==null)throw new IllegalStateException("Empty screenshot");copy=hardware.copy(Bitmap.Config.ARGB_8888,true);}catch(Exception ex){inFlight=false;restoreBar();pause("Cannot read screen");return;}finally{if(hardware!=null)hardware.recycle();buffer.close();}
                 restoreBar();
                 if(ticket!=generation||destroyed){copy.recycle();inFlight=false;return;}captureErrors=0;intervalErrors=0;
                 Rect liveDisplay=displayBounds();
@@ -132,7 +139,9 @@ public final class FarmerService extends AccessibilityService {
                 if((previewRequested||forCalibration)&&liveDisplay.width()<=liveDisplay.height()){copy.recycle();retryGeometry(forCalibration,"Waiting for Corebound landscape view");return;}
                 if(capturedWindow!=null){Bitmap full=CaptureGeometry.placeWindow(copy,capturedWindow,liveDisplay);if(full==null){copy.recycle();compatibilityCapture=true;getSharedPreferences("capture",0).edit().putBoolean("compatibility",true).apply();retryGeometry(forCalibration,"Window capture geometry differs; using clean display capture");return;}if(full!=copy){copy.recycle();copy=full;}}
                 if(!CaptureGeometry.matches(copy,liveDisplay)){copy.recycle();retryGeometry(forCalibration,"Screenshot size differs from the live display; retrying");return;}geometryRetries=0;
-                if(capturedWindow!=null&&containsOurOverlay(copy)){copy.recycle();inFlight=false;compatibilityCapture=true;getSharedPreferences("capture",0).edit().putBoolean("compatibility",true).apply();log("Overlay detected in window capture; switching to hidden-overlay capture");nextCapture=0;if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),350);return;}
+                if(capturedWindow!=null&&containsOurOverlay(copy)){copy.recycle();inFlight=false;compatibilityCapture=true;getSharedPreferences("capture",0).edit().putBoolean("compatibility",true).apply();log("Overlay detected in window capture; switching to masked display capture");nextCapture=0;if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),350);return;}
+                final double[][] captureMasks;
+                if(capturedWindow==null){Rect hidden=new Rect(controlsAtRequest);Rect current=overlayBounds();if(!current.isEmpty())hidden.union(current);if(!hidden.intersect(liveDisplay))hidden.setEmpty();if(!hidden.isEmpty()){Paint black=new Paint();black.setColor(Color.BLACK);new Canvas(copy).drawRect(hidden,black);captureMasks=new double[][]{{hidden.left/(double)copy.getWidth(),hidden.top/(double)copy.getHeight(),hidden.right/(double)copy.getWidth(),hidden.bottom/(double)copy.getHeight()}};}else captureMasks=new double[0][];}else captureMasks=new double[0][];
                 screenW=copy.getWidth();screenH=copy.getHeight();
                 if(forCalibration&&screenW<=screenH){copy.recycle();inFlight=false;pause("Rotate Corebound to landscape");return;}
                 if(forCalibration){inFlight=false;showCalibration(copy);return;}
@@ -140,8 +149,8 @@ public final class FarmerService extends AccessibilityService {
                 // Keep the boost's small star digit legible to OCR. Pixel measurements
                 // still downsample internally, so navigation has bounded cost.
                 final Bitmap original=copy;final int width=Math.min(1600,screenW);final Bitmap image=Bitmap.createScaledBitmap(original,width,Math.round((float)screenH*width/screenW),true);if(image!=original)original.recycle();
-                worker.execute(()->{try{int[] pixels=new int[image.getWidth()*image.getHeight()];image.getPixels(pixels,0,image.getWidth(),0,0,image.getWidth(),image.getHeight());PixelVision.Result vision=PixelVision.analyse(pixels,image.getWidth(),image.getHeight());if(captureMapping&&vision.gameplay&&engine.state()==FarmEngine.State.END_SCREEN)captureTemporal.reset();
-                    captureTemporal.update(pixels,image.getWidth(),image.getHeight(),vision,capturedAt);
+                worker.execute(()->{try{Bitmap measurement=Bitmap.createScaledBitmap(image,Math.min(960,image.getWidth()),Math.max(1,Math.round(image.getHeight()*Math.min(960,image.getWidth())/(float)image.getWidth())),true);int mw=measurement.getWidth(),mh=measurement.getHeight();int[] pixels=new int[mw*mh];measurement.getPixels(pixels,0,mw,0,0,mw,mh);if(measurement!=image)measurement.recycle();PixelVision.Result vision=PixelVision.analyse(pixels,mw,mh,captureMasks);if(captureMapping&&vision.gameplay&&engine.state()==FarmEngine.State.END_SCREEN)captureTemporal.reset();
+                    captureTemporal.update(pixels,mw,mh,vision,capturedAt);
                     byte[] bytes=null;
                     if(captureMapping&&vision.gameplay&&(vision.controlsDetected||vision.playerConfidence>=.5)&&capturedAt-lastKeyframeAt>=700){
                         Bitmap small=Bitmap.createScaledBitmap(image,Math.min(960,image.getWidth()),Math.max(1,Math.round(image.getHeight()*Math.min(960,image.getWidth())/(float)image.getWidth())),true);
@@ -151,17 +160,17 @@ public final class FarmerService extends AccessibilityService {
             }
             @Override public void onFailure(int error){restoreBar();inFlight=false;if(ticket!=generation)return;
                 if(error==ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT&&intervalErrors++<5){nextCapture=SystemClock.elapsedRealtime()+450;if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),500);return;}
-                if(capturedWindow!=null&&(error==ERROR_TAKE_SCREENSHOT_INVALID_WINDOW||error==ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR)){compatibilityCapture=true;nextCapture=SystemClock.elapsedRealtime()+400;log("Window capture failed; retrying with hidden toolbar");if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),450);return;}
+                if(capturedWindow!=null&&(error==ERROR_TAKE_SCREENSHOT_INVALID_WINDOW||error==ERROR_TAKE_SCREENSHOT_INTERNAL_ERROR)){compatibilityCapture=true;nextCapture=SystemClock.elapsedRealtime()+400;log("Window capture failed; retrying with masked display capture");if(forCalibration||previewRequested)handler.postDelayed(()->capture(forCalibration),450);return;}
                 captureErrors++;nextCapture=SystemClock.elapsedRealtime()+800;if(captureErrors>=3||forCalibration||previewRequested){previewRequested=false;pause("Screen capture unavailable ("+error+")");}else setStatus("Retrying screen capture…");}
         };
         if(Build.VERSION.SDK_INT>=34&&windowId>=0)takeScreenshotOfWindow(windowId,getMainExecutor(),callback);
-        else {if(bar!=null)bar.setVisibility(View.INVISIBLE);handler.postDelayed(()->{if(ticket!=generation){inFlight=false;restoreBar();return;}takeScreenshot(Display.DEFAULT_DISPLAY,getMainExecutor(),callback);},65);}
+        else takeScreenshot(Display.DEFAULT_DISPLAY,getMainExecutor(),callback);
     }
     private void recognise(Bitmap bitmap,PixelVision.Result vision,String pkg,long capturedAt,int ticket,byte[] keyframe){
         if(ticket!=generation||destroyed){bitmap.recycle();inFlight=false;return;}
         long now=SystemClock.elapsedRealtime();
         boolean fullReadDue=now-lastFullOcrAt>=1500;
-        if(!fullReadDue&&vision.gameplay&&vision.controlsDetected&&engine.state()==FarmEngine.State.GAMEPLAY&&vision.playerConfidence>=.5){
+        if(vision.gameplay&&vision.controlsDetected&&engine.state()==FarmEngine.State.GAMEPLAY&&vision.playerConfidence>=.5){
             List<FarmEngine.Token> freshHud=now-hudCapturedAt<=1500?hudTokens:Collections.emptyList();
             // Drive from pixels immediately. HUD OCR is independent and cannot
             // hold the next movement observation behind its completion callback.
@@ -193,16 +202,14 @@ public final class FarmerService extends AccessibilityService {
     }
     private void readHud(Bitmap bitmap,String pkg,long capturedAt,int ticket){
         hudOcrBusy=true;lastOcrAt=SystemClock.elapsedRealtime();
-        // Sector-completed banners sit below the HUD. Retain them so a camera
-        // gap cannot erase the evidence that the next cavern changes direction.
-        Bitmap crop=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),Math.max(1,(int)(bitmap.getHeight()*.50)));
-        Bitmap textImage=Bitmap.createScaledBitmap(crop,crop.getWidth()*2,crop.getHeight()*2,true);
-        if(crop!=bitmap&&crop!=textImage)crop.recycle();
+        // Read banners, gate counts and ad evidence without blocking steering.
+        // The 1600-pixel image keeps text readable without a 4x OCR allocation.
+        Bitmap textImage=bitmap;
         recognizer.process(InputImage.fromBitmap(textImage,0)).addOnSuccessListener(text->{
             if(ticket!=generation||!running||destroyed||!GAME.equals(pkg))return;
             ArrayList<FarmEngine.Token> tokens=new ArrayList<>();
             for(Text.TextBlock block:text.getTextBlocks())for(Text.Line line:block.getLines()){
-                Rect r=line.getBoundingBox();if(r!=null)tokens.add(new FarmEngine.Token(line.getText(),r.left/(2.*bitmap.getWidth()),r.top/(2.*bitmap.getHeight()),r.right/(2.*bitmap.getWidth()),r.bottom/(2.*bitmap.getHeight())));
+                Rect r=line.getBoundingBox();if(r!=null)tokens.add(new FarmEngine.Token(line.getText(),r.left/(double)bitmap.getWidth(),r.top/(double)bitmap.getHeight(),r.right/(double)bitmap.getWidth(),r.bottom/(double)bitmap.getHeight()));
             }
             hudTokens=tokens;hudCapturedAt=capturedAt;
         }).addOnFailureListener(ex->{if(ticket==generation)log("HUD unreadable this frame; continue visible gameplay");})
@@ -225,7 +232,7 @@ public final class FarmerService extends AccessibilityService {
         FarmEngine.Frame f=ScreenInterpreter.interpret(SystemClock.elapsedRealtime(),capturedAt,pkg,tokens,vision);
         f.remainingEnemiesCapturedAt=textCapturedAt;
         f.viewportAspectRatio=screenH>0?screenW/(double)screenH:Double.NaN;
-        FarmEngine.Action action=engine.next(f);setStatus(engine.runs()+" runs · "+action.reason);log(action.kind+": "+action.reason);
+        FarmEngine.Action action=engine.next(f);positionBarForAd(engine.adSessionActive());setStatus(engine.runs()+" runs · "+action.reason);log(action.kind+": "+action.reason);
         if(manualMapping&&f.gameplay&&!f.observedAd&&keyframe!=null&&engine.recordingId()!=null){
             final String recordingId=engine.recordingId();final com.corefilter.farmer.engine.MapNavigator.Snapshot pose=engine.navigationSnapshot();
             mapWriter.execute(()->{try{boolean saved=ManualRecordingStore.record(getApplicationContext(),recordingId,f,pose,keyframe);if(saved)handler.post(()->{if(ticket==generation&&running){manualFramesSaved++;setStatus("Recording your route · "+manualFramesSaved+" images saved");}});}catch(Exception ex){handler.post(()->{if(ticket==generation)pause("Mapping storage failed · free space, then Record");});}});
@@ -236,7 +243,7 @@ public final class FarmerService extends AccessibilityService {
         FarmEngine.RunMap finished;while((finished=engine.takeFinishedMap())!=null)mapBacklog.addLast(finished);
         writeNextMap();
         if(action.kind==FarmEngine.Kind.PAUSE&&vision.selectedPanel)log("Selection OCR: "+f.text.replace('\n',' '));
-        if(manualMapping){nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+35);return;}execute(action,vision,pkg,ticket);
+        if(manualMapping){nextCapture=Math.max(lastScreenshotAt+340,SystemClock.elapsedRealtime());return;}execute(action,vision,pkg,ticket);
     }
     private void writeNextMap(){
         if(mapWriteBusy||mapBacklog.isEmpty()||destroyed)return;
@@ -266,12 +273,12 @@ public final class FarmerService extends AccessibilityService {
             }else dispatch(TouchPlan.tap(screenW,screenH,a.x,a.y),ticket);break;case MOVE:
             double x=a.direction<0?profile.leftX:profile.rightX,y=a.direction<0?profile.leftY:profile.rightY;
             if(profile.autoControls&&v.controlsDetected){if(a.direction<0&&v.leftX>0){x=v.leftX;y=v.leftY;}if(a.direction>0&&v.rightX>0){x=v.rightX;y=v.rightY;}}
-            if(a.direction==0&&a.jumpCount==0){nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+50);break;}
+            if(a.direction==0&&a.jumpCount==0){nextCapture=Math.max(lastScreenshotAt+340,SystemClock.elapsedRealtime()+50);break;}
             if(a.jumpCount>0)earliestGameplayObservationAt=SystemClock.elapsedRealtime()+Math.max(40,Math.min(140,profile.jumpMs))+75;
             dispatch(TouchPlan.build(screenW,screenH,x,y,a.direction!=0,profile.jumpX,profile.jumpY,a.jumpCount,a.jumpSpacingMs,profile.jumpMs,a.durationMs),ticket);break;default:break;}
     }
     private void dispatch(GestureDescription gesture,int ticket){
-        gestureBusy=true;boolean accepted=dispatchGesture(gesture,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){gestureBusy=false;restoreBar();if(ticket!=generation||!running)return;Observation latest=pendingFrames.take(SystemClock.elapsedRealtime(),generation,1000,earliestGameplayObservationAt);nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+35);if(latest!=null)processFrame(latest.vision,latest.pkg,latest.capturedAt,latest.ticket,latest.tokens,latest.textCapturedAt,latest.keyframe);}@Override public void onCancelled(GestureDescription g){gestureBusy=false;restoreBar();pendingFrames.clear();if(ticket==generation&&running)pause("Touch interrupted · press Run when ready");}},handler);if(!accepted){gestureBusy=false;restoreBar();pendingFrames.clear();pause("Android rejected touch input");}
+        gestureBusy=true;boolean accepted=dispatchGesture(gesture,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){gestureBusy=false;restoreBar();if(ticket!=generation||!running)return;Observation latest=pendingFrames.take(SystemClock.elapsedRealtime(),generation,1000,earliestGameplayObservationAt);nextCapture=Math.max(lastScreenshotAt+340,SystemClock.elapsedRealtime());if(latest!=null)processFrame(latest.vision,latest.pkg,latest.capturedAt,latest.ticket,latest.tokens,latest.textCapturedAt,latest.keyframe);}@Override public void onCancelled(GestureDescription g){gestureBusy=false;restoreBar();pendingFrames.clear();if(ticket==generation&&running)pause("Touch interrupted · press Run when ready");}},handler);if(!accepted){gestureBusy=false;restoreBar();pendingFrames.clear();pause("Android rejected touch input");}
     }
     public void requestPreview(){pause("Previewing game capture");Intent game=getPackageManager().getLaunchIntentForPackage(GAME);if(game==null){setStatus("Corebound is not installed");return;}startActivity(game.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));previewWhenReady(0);}
     private void previewWhenReady(int tries){handler.postDelayed(()->{if(GAME.equals(foregroundPackage())&&displayBounds().width()>displayBounds().height())handler.postDelayed(()->{if(GAME.equals(foregroundPackage()))previewCapture();else setStatus("Open Corebound and try Preview again");},750);else if(tries<8)previewWhenReady(tries+1);else setStatus("Open Corebound in landscape and try Preview again");},250);}
@@ -282,7 +289,7 @@ public final class FarmerService extends AccessibilityService {
     private final class CapturePreview extends View {
         final Bitmap screenshot;final Paint paint=new Paint(3);
         CapturePreview(Context c,Bitmap b){super(c);screenshot=b;setFocusableInTouchMode(true);requestFocus();setContentDescription("Captured game preview. Tap or press Back to close.");}
-        @Override protected void onDraw(Canvas c){c.drawColor(Ui.BG);int header=Math.min(Ui.dp(getContext(),70),Math.max(0,getHeight()-1));RectF area=new RectF(0,header,getWidth(),getHeight());c.drawBitmap(screenshot,null,CaptureGeometry.fit(screenshot,area),paint);paint.setColor(Ui.INK);paint.setTextSize(Ui.dp(getContext(),17));c.drawText("This is what Ceiling Scout sees",Ui.dp(getContext(),20),Ui.dp(getContext(),28),paint);paint.setColor(Ui.MINT);paint.setTextSize(Ui.dp(getContext(),12));c.drawText("The floating bar should be absent · tap anywhere to close",Ui.dp(getContext(),20),Ui.dp(getContext(),51),paint);}
+        @Override protected void onDraw(Canvas c){c.drawColor(Ui.BG);int header=Math.min(Ui.dp(getContext(),70),Math.max(0,getHeight()-1));RectF area=new RectF(0,header,getWidth(),getHeight());c.drawBitmap(screenshot,null,CaptureGeometry.fit(screenshot,area),paint);paint.setColor(Ui.INK);paint.setTextSize(Ui.dp(getContext(),17));c.drawText("This is what Ceiling Scout sees",Ui.dp(getContext(),20),Ui.dp(getContext(),28),paint);paint.setColor(Ui.MINT);paint.setTextSize(Ui.dp(getContext(),12));c.drawText("Controls are excluded from analysis · tap anywhere to close",Ui.dp(getContext(),20),Ui.dp(getContext(),51),paint);}
         @Override public boolean onTouchEvent(MotionEvent e){if(e.getAction()==MotionEvent.ACTION_UP)performClick();return true;}
         @Override public boolean performClick(){super.performClick();hidePreview();setStatus("Preview closed · press Run");return true;}
         @Override public boolean onKeyUp(int code,KeyEvent e){if(code==KeyEvent.KEYCODE_BACK){performClick();return true;}return super.onKeyUp(code,e);}

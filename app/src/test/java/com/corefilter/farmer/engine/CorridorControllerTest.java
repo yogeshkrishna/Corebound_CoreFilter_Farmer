@@ -6,6 +6,25 @@ import static com.corefilter.farmer.engine.FarmEngine.*;
 
 /** Generated worlds and actual feedback loops; no recordings are opened. */
 public class CorridorControllerTest {
+    @Test public void missedEnemyReturnSurvivesRoofContactAndCameraLoss(){
+        for(boolean registered:new boolean[]{true,false}){
+            MapNavigator n=new MapNavigator(new Config());
+            for(int i=0;i<4;i++)n.next(room(i*350,.45+i*.09,.715,true,true));
+            Frame exit=room(1400,.85,.715,true,false);exit.gate=true;exit.gateX=.56;
+            exit.remainingEnemies=1;exit.remainingEnemiesConfidence=.95;
+            if(!registered)exit.cameraConfidence=0;
+            assertEquals(-1,n.next(exit).direction);assertEquals("REMAINING_ENEMY_SWEEP",n.phase());
+            Frame roof=room(1750,.79,.52,false,true);roof.ceilingReached=true;roof.remainingEnemies=1;roof.remainingEnemiesConfidence=.95;
+            roof.cameraConfidence=0;
+            assertEquals(-1,n.next(roof).direction);assertEquals("REMAINING_ENEMY_SWEEP",n.phase());
+        }
+    }
+    @Test public void aScoutCannotRefillItsJumpsAndClimbForeverOnOneLedge(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,false));n.next(room(350,.54,.6,false,false));n.next(room(700,.65,.56,false,false));
+        assertEquals("SCOUT_HIGH_CEILING",n.phase());
+        Frame ledge=room(8400,.68,.5,true,false);
+        n.next(ledge);assertNotEquals("SCOUT_HIGH_CEILING",n.phase());assertFalse(n.snapshot().complete);
+    }
     @Test public void cameraGapsRetainLocalGeometryWithoutInventingWorldOffsets(){
         MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,true));
         Frame f=room(700,.45,.50,false,true);f.cameraConfidence=0;n.next(f);

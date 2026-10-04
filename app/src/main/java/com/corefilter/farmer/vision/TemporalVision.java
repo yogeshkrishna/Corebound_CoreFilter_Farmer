@@ -62,7 +62,7 @@ public final class TemporalVision {
             // foreground views before exposing a new *local* coordinate origin.
             // This declares lost registration, never a new room or sector.
             if(current.foregroundCount>=8) {
-                if(recoveryAnchor!=null&&register(recoveryAnchor,current).confidence>=.70)recoveryMatches++;
+                if(recoveryAnchor!=null&&register(recoveryAnchor,current).confidence>=.55)recoveryMatches++;
                 else recoveryMatches=0;
                 recoveryAnchor=current;
                 if(now-anchorAt>3500&&recoveryMatches>=2) {
@@ -110,6 +110,7 @@ public final class TemporalVision {
     }
 
     private static boolean masked(double x,double y,PixelVision.Result r) {
+        if(PixelVision.occluded(x,y,r))return true;
         if(y<.15||y>.86||x<.035||x>.96||(x<.4&&y>.69))return true;
         if(r.playerConfidence>.30&&x>r.playerLeft-.035&&x<r.playerRight+.035&&y>r.playerTop-.05&&y<r.playerBottom+.05)return true;
         for(double[] box:r.enemyBoxes)if(x>box[0]-.015&&x<box[2]+.015&&y>box[1]-.025&&y<box[3]+.025)return true;
@@ -140,7 +141,7 @@ public final class TemporalVision {
             int edge=Math.abs(s.light[at-1]-s.light[at+1])+Math.abs(s.light[at-W]-s.light[at+W]);
             // Background parallax and aesthetic teeth are not registration
             // anchors, even if they are the highest-contrast objects on screen.
-            if(edge>=7&&s.light[at]>=15&&s.foreground[at])ranked.add(new int[]{x,y,edge,1});
+            if(edge>=4&&s.light[at]>=15&&s.foreground[at])ranked.add(new int[]{x,y,edge,1});
         }
         ranked.sort(Comparator.comparingInt((int[] f)->f[2]).reversed());
         boolean[] taken=new boolean[W*H];
@@ -187,24 +188,25 @@ public final class TemporalVision {
         double quality=Math.max(0,1-best/20),uniqueness=Math.min(1,Math.max(0,(second-best)/4));
         result.error=best;
         result.confidence=Math.min(.98,quality*Math.min(1,coverage/.62)*(.35+.65*uniqueness));
-        int inliers=0,considered=0;boolean[] zones=new boolean[12];
+        int inliers=0,considered=0;boolean[] zones=new boolean[12];int[] halfConsidered=new int[2],halfInliers=new int[2];
         for(int fi=0;fi<features.size();fi++) {
             int[] f=features.get(fi);int x=f[0]+result.dx,y=f[1]+result.dy;
             if(x<3||x>=W-3||y<3||y>=H-3)continue;
             if(!b.valid[y*W+x])continue;
-            considered++;
+            considered++;halfConsidered[f[0]<W/2?0:1]++;
             // A projected foreground landmark becoming visible dark/free space
             // is a disagreement, not an excuse to omit that landmark from the
             // consensus denominator. Otherwise a deforming half-frame can win.
             double residual=patchError(a,b,f[0],f[1],x,y);if(residual<0)continue;
             if(residual<=10&&residual<=individualBest[fi]+3) {
-                inliers++;zones[Math.min(2,f[1]*3/H)*4+Math.min(3,f[0]*4/W)]=true;
+                inliers++;halfInliers[f[0]<W/2?0:1]++;zones[Math.min(2,f[1]*3/H)*4+Math.min(3,f[0]*4/W)]=true;
             }
         }
         int spread=0;for(boolean used:zones)if(used)spread++;
         // A local flash, repeated tile, or two independently deforming regions
         // cannot drag the world map using one locally convenient match.
         if(points<6||inliers<6||inliers<considered*.68||spread<2||Math.abs(result.dx)==rangeX||Math.abs(result.dy)==rangeY)result.confidence=0;
+        for(int half=0;half<2;half++)if(halfConsidered[half]>=8&&halfInliers[half]<halfConsidered[half]*.65)result.confidence=0;
         return result;
     }
 
