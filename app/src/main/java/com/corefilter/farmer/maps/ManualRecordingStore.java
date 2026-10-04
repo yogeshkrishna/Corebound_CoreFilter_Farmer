@@ -27,8 +27,8 @@ public final class ManualRecordingStore {
         try(FileOutputStream out=new FileOutputStream(new File(d,filename))){out.write(jpeg);out.getFD().sync();}
         try{
             JSONObject row=new JSONObject().put("file",filename).put("capturedAtMs",f.capturedAt).put("section",pose.room)
-                .put("cameraConfidence",f.cameraConfidence).put("cameraX",f.cameraConfidence>=.55?pose.cameraX:JSONObject.NULL)
-                .put("cameraY",f.cameraConfidence>=.55?pose.cameraY:JSONObject.NULL).put("playerX",finite(f.playerX)).put("playerY",finite(f.playerY))
+                .put("cameraConfidence",pose.cameraConfidence).put("cameraX",pose.cameraConfidence>=.55?pose.cameraX:JSONObject.NULL)
+                .put("cameraY",pose.cameraConfidence>=.55?pose.cameraY:JSONObject.NULL).put("playerX",finite(f.playerX)).put("playerY",finite(f.playerY))
                 .put("playerConfidence",f.playerConfidence).put("roofVisible",pose.screenPoses.length>0?pose.screenPoses[pose.screenPoses.length-1][11]>0:false);
             try(FileOutputStream out=new FileOutputStream(new File(d,"frames.jsonl"),true)){out.write((row.toString()+"\n").getBytes(StandardCharsets.UTF_8));out.getFD().sync();}
         }catch(JSONException e){throw new IOException("Cannot store mapping pose",e);}

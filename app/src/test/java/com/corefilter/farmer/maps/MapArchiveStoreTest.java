@@ -31,10 +31,10 @@ public class MapArchiveStoreTest {
             assertArrayEquals(image,z.getInputStream(z.getEntry("manual-frames/frame-000000-1000.jpg")).readAllBytes());assertNotNull(z.getEntry("manual-frames/frames.jsonl"));
         }
         assertEquals(0,ManualRecordingStore.stagedCount(c));
-        String interrupted=UUID.randomUUID().toString();ManualRecordingStore.record(c,interrupted,frame,engine.navigationSnapshot(),image);
+        String interrupted=UUID.randomUUID().toString();ManualRecordingStore.record(c,interrupted,frame,new MapNavigator(new FarmEngine.Config()).snapshot(),image);
         assertEquals(1,MapArchiveStore.recoverManual(c));assertEquals(0,MapArchiveStore.recoverManual(c));
         boolean recovered=false;for(MapArchiveStore.Bundle b:MapArchiveStore.list(c))try(ZipFile z=new ZipFile(b.file)){
-            JSONObject data=new JSONObject(new String(z.getInputStream(z.getEntry("map.json")).readAllBytes(),StandardCharsets.UTF_8));if(data.getString("outcome").equals("manual-recovered")){recovered=true;assertFalse(data.getBoolean("complete"));assertNotNull(z.getEntry("manual-frames/frames.jsonl"));}
+            JSONObject data=new JSONObject(new String(z.getInputStream(z.getEntry("map.json")).readAllBytes(),StandardCharsets.UTF_8));if(data.getString("outcome").equals("manual-recovered")){recovered=true;assertFalse(data.getBoolean("complete"));assertNotNull(z.getEntry("manual-frames/frames.jsonl"));JSONObject pose=new JSONObject(new String(z.getInputStream(z.getEntry("manual-frames/frames.jsonl")).readAllBytes(),StandardCharsets.UTF_8).trim());assertEquals(0,pose.getDouble("cameraConfidence"),0);assertTrue(pose.isNull("cameraX"));assertTrue(pose.isNull("cameraY"));}
         }assertTrue(recovered);
     }
     private Context context;

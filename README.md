@@ -53,7 +53,7 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.4.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.5.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 
