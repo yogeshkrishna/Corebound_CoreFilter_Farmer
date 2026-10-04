@@ -23,3 +23,12 @@ Map sharing is independent of the dashboard lifecycle, with foreground notificat
 The shaped-cavern regression completes two downward direction changes and traverses the final lower corridor. Robolectric lifecycle tests use a simulated Android runtime, and prerecorded views cannot react to injected inputs. No live phone trial or OCR-speed measurement was performed. Full ceiling coverage, every enemy's detection, changed ads and unattended farming remain unverified.
 
 Package `com.corefilter.farmer`, version `0.4.7`, versionCode `11`. Original certificate SHA-256: `65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097`.
+
+## Published artifact
+
+The [GitHub release build](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/runs/37222850348) passed both receiver and Android release jobs at source commit `fa07dd40621c06881cf8d419965316eeb0c1056c`. [Version 0.4.7](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/tag/v0.4.7) is public.
+
+The APK was downloaded without account credentials and matched both its published checksum attachment and GitHub asset digest. Package/version, original certificate and 16 KiB page alignment were checked on that downloaded file. The canonical local copy is `dist/Ceiling-Scout.apk`.
+
+- APK size: `52,207,734` bytes.
+- APK SHA-256: `1561f12c800e53d79efc6eb5dfcd31d55ede430264d344a5f9bb5d5d6c935fc1`.
