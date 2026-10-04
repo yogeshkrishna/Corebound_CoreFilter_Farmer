@@ -24,13 +24,18 @@ public final class ScreenInterpreter {
         f.registrationEpoch=v.registrationEpoch;f.registrationReset=v.registrationReset;f.registrationLost=v.registrationLost;f.sceneChanged=v.sceneChanged;
         f.enemyBoxes=v.enemyBoxes;f.playButton=v.playButton;f.playX=v.playX;f.playY=v.playY;f.selectedPanel=v.selectedPanel;
         String lower=text.toString().toLowerCase(Locale.ROOT);
+        f.controlsDetected=v.controlsDetected;
+        boolean adText=lower.contains("advertisement")||lower.contains("reward in")||lower.contains("ad ends")||lower.contains("close ad")||lower.contains("install now")||lower.contains("google play")||lower.contains("skip video")||lower.contains("skip ad");
+        // Install cards can contain colours/outlines that resemble the game HUD.
+        if(adText){f.observedAd=true;f.gameplay=false;f.playerConfidence=0;}
         if(f.gameplay){java.util.regex.Matcher sector=java.util.regex.Pattern.compile("sector\\s*([1-4])\\s*/\\s*4\\s*completed").matcher(lower);if(sector.find())f.completedSector=Integer.parseInt(sector.group(1));}
         if(f.gameplay)readRemainingEnemies(f,tokens);
         for(FarmEngine.Token t:tokens){String s=t.text.toLowerCase(Locale.ROOT).trim();if(t.top<.24&&(s.equals("complete!")||s.equals("complete")||s.equals("completed!")))f.endScreen=true;}
         f.crateScreen=lower.contains("crate cooldown")||lower.contains("crate rewards")||lower.contains("crate contents")||lower.contains("crate opened");
         if(f.endScreen&&v.rewardButton){f.tokens.add(new FarmEngine.Token("Watch reward",.52,.814,.819,.95));f.filterOffer=v.filterLoot;f.uncertainFilterOffer=v.uncertainFilterOffer;}
         f.filterLoot=f.endScreen&&v.filterLoot;
-        f.observedAd=!f.gameplay&&!f.endScreen&&!f.crateScreen&&(lower.contains("advertisement")||lower.contains("reward in")||lower.contains("ad ends")||lower.contains("close ad")||lower.contains("install now")||lower.contains("google play")||lower.contains("skip video"));
+        f.observedAd=adText;
+        if(adText){f.endScreen=f.crateScreen=f.filterLoot=f.filterOffer=f.uncertainFilterOffer=false;}
         return f;
     }
 

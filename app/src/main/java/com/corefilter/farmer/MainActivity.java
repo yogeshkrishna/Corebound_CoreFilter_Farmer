@@ -70,7 +70,7 @@ public final class MainActivity extends Activity {
         step(guide,"3","Run, then keep an eye on it","Pause stops touches. Stop ends the session.");main.addView(guide);
         main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.4.2 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.4.3 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){

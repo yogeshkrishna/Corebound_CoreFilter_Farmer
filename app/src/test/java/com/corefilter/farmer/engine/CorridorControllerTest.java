@@ -93,7 +93,29 @@ public class CorridorControllerTest {
         assertEquals(0,n.next(room(350,.53,.60,false,false)).jumps);
         assertEquals(1,n.next(room(700,.64,.62,false,false)).jumps);
         assertEquals("SCOUT_HIGH_CEILING",n.snapshot().phase);
-        assertEquals(0,n.next(room(1050,.71,.52,false,false)).jumps);
+        assertEquals("Chain before crest instead of losing the previous rise",1,n.next(room(1050,.71,.52,false,false)).jumps);
+    }
+    @Test public void highRoofScoutChainsUpwardBesideWallWithAndWithoutCameraRegistration(){
+        for(boolean registered:new boolean[]{true,false}){
+            MapNavigator n=new MapNavigator(new Config());
+            for(int i=0;i<3;i++){Frame f=room(i*350,.45+i*.09,i==0?.715:.60-i*.02,i==0,false);if(!registered)f.cameraConfidence=0;n.next(f);}
+            Frame f=room(1050,.73,.48,false,false);f.wallRight=true;if(!registered)f.cameraConfidence=0;
+            MapNavigator.Decision d=n.next(f);assertEquals(d.reason,0,d.direction);assertEquals(d.reason,1,d.jumps);
+            assertEquals("SCOUT_HIGH_CEILING",n.snapshot().phase);
+        }
+    }
+    @Test public void cameraOriginRecoveryDoesNotEraseActiveHighRoofScout(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,false));n.next(room(350,.54,.60,false,false));n.next(room(700,.65,.56,false,false));
+        Frame f=room(1050,.70,.45,false,false);f.registrationEpoch=1;f.sceneChanged=true;n.next(f);
+        f=room(3150,.70,.40,false,false);f.registrationEpoch=1;n.next(f);
+        assertEquals("SCOUT_HIGH_CEILING",n.snapshot().phase);
+    }
+    @Test public void supportedScoutReturnCannotPushAnInterveningWallForever(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,false));n.next(room(350,.54,.60,false,false));n.next(room(700,.65,.56,false,false));
+        n.next(room(1050,1.20,.45,false,true));n.next(room(1400,1.25,.48,false,true));
+        assertEquals("RETURN_GROUND",n.snapshot().phase);
+        Frame landing=room(2100,1.25,.715,true,true);landing.wallLeft=true;
+        MapNavigator.Decision d=n.next(landing);assertFalse(d.reason,d.pause);assertNotEquals("RETURN_GROUND",n.snapshot().phase);assertEquals(1,d.direction);
     }
     @Test public void proximityCannotInspectAnOccludedCeiling(){
         MapNavigator n=new MapNavigator(new Config());n.observe(room(0,.45,.35,false,true));

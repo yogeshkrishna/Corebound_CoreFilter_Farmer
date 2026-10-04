@@ -1,4 +1,4 @@
-# Corridor controller, version 0.4.2
+# Corridor controller, version 0.4.3
 
 The controller commits to a direction through each cavern. Its normal action is forward movement with a base jump when grounded and when the measured trajectory clears the roof. It does not navigate an air grid or spend all Hookshots as a repeated jump batch.
 
@@ -6,8 +6,8 @@ The controller commits to a direction through each cavern. Its normal action is 
 
 1. **Enter.** Move right into the first corridor. Rear observations remain recorded but cannot pull the crawler back into the spawn wall before it enters.
 2. **Ground sweep.** Jump-move in the corridor direction, attempting Ember contact with bots along the path. A ceiling visible during normal traversal needs no dedicated climb. Its underside and hanging-enemy zone need two unobstructed observations to count as inspected.
-3. **High-roof scout.** If normal movement still leaves an open region above the view, retain the scouting origin. Let the current jump rise, then issue one additional Hookshot when its ascent has subsided and overhead clearance permits it. Observe again before the next impulse. Stop climbing once the roof becomes visible, clearance is insufficient, or charges run out. Release at a ceiling instead of pressing jump against it.
-4. **Return to ground.** Descend toward the scouting origin without spending extra jumps. Retain discovered targets and unresolved ceiling columns, then complete the ground sweep and return to missed enemies.
+3. **High-roof scout.** If normal movement still leaves an open region above the view, retain the scouting origin. Issue one additional Hookshot before the estimated crest, respecting the configured tap spacing and fresh observations. Check vertical clearance separately from the forward route; a nearby side wall permits a straight upward scout. Observe again before the next impulse. Stop climbing once the roof becomes visible, clearance is insufficient, or charges run out. Release at a ceiling instead of pressing jump against it.
+4. **Return to ground.** Descend toward the scouting origin without spending extra jumps. On actual support, a blocking wall or a distance-based return deadline ends the return and resumes the sweep. Charge exhaustion never marks the unseen roof as verified. Retain discovered targets and unresolved ceiling columns, then complete the ground sweep and return to missed enemies.
 5. **Descend and turn.** Follow a mapped floor opening. A lower landing together with an enclosing wall and free passage on the opposite side establishes a direction change. A screenshot edge, stalled action or ambiguous camera view cannot establish a turn.
 6. **Revisit.** Keep off-screen targets at their observed world positions. Return toward a missed target, attempting contact through a ground jump or an overhead interception when necessary. Return time depends on distance and learned horizontal speed. At the exit, a fresh positive ordinary-enemy count starts a return sweep even if no enemy was detected. A moving sweep continues until the observed corridor start or rear wall; ten elapsed seconds cannot count as a completed sweep. A stalled return releases and pauses rather than claiming success.
 
@@ -41,4 +41,6 @@ The current controller starts a fresh atlas each run. Stored bundles are for fut
 
 The JSON additionally retains up to 450 terrain grids sampled at least 700 ms apart, with capture times, camera confidence, player position and corridor direction. Missing camera offsets are null. These local observations survive camera gaps without being pasted into the world atlas at invented positions.
 
-See [verification](verification-0.4.2.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+See [verification](verification-0.4.3.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+
+In 0.4.3, a camera-origin recovery retains an active scout or descent. Full-screen OCR periodically checks gameplay and always checks ads. Install-card evidence overrides false gameplay pixels. Two fresh confirmed Corebound views end an ad session. Pausing an ad preserves its state for resuming and bounded Play Store recovery. Overlay menus suspend new decisions and captures until dismissed; rotation clamps the bar and menu to the current display.

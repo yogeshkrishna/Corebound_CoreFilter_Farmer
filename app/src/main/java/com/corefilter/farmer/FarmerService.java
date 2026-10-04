@@ -42,6 +42,8 @@ public final class FarmerService extends AccessibilityService {
         Observation(PixelVision.Result vision,String pkg,long capturedAt,int ticket,List<FarmEngine.Token> tokens,long textCapturedAt){this.vision=vision;this.pkg=pkg;this.capturedAt=capturedAt;this.ticket=ticket;this.tokens=new ArrayList<>(tokens);this.textCapturedAt=textCapturedAt;}
     }
     private LinearLayout bar;private TextView status;private Button runButton;private View captureMarker;private WindowManager.LayoutParams barParams;
+    private PopupWindow menuPopup;
+    private long lastFullOcrAt=-10000,foregroundMissingAt=-1,externalAdAt=-1;
     private boolean overlayWanted=true,compatibilityCapture=false,previewRequested=false;
     private long lastOcrAt=0,lastScreenshotAt=0,earliestGameplayObservationAt=0;private int intervalErrors=0,slowFrames=0;
     private boolean hudOcrBusy;
@@ -56,9 +58,9 @@ public final class FarmerService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent e){}
     @Override public void onInterrupt(){pause("Android interrupted controls");}
     @Override public void onDestroy(){destroyed=true;pause("Service stopped");handler.removeCallbacksAndMessages(null);hideCalibration();hidePreview();if(bar!=null){wm.removeView(bar);bar=null;}if(recognizer!=null)recognizer.close();worker.shutdownNow();mapWriter.shutdown();instance=null;super.onDestroy();}
-    @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);if(bar!=null){Rect bounds=wm.getMaximumWindowMetrics().getBounds();barParams.x=Math.max(0,Math.min(bounds.width()-barParams.width,barParams.x));barParams.y=Math.max(0,Math.min(bounds.height()-barParams.height,barParams.y));wm.updateViewLayout(bar,barParams);}if(running){generation++;pendingFrames.clear();temporal=new TemporalVision();nextCapture=0;}}
+    @Override public void onConfigurationChanged(android.content.res.Configuration configuration){super.onConfigurationChanged(configuration);if(menuPopup!=null)menuPopup.dismiss();if(bar!=null){Rect bounds=wm.getMaximumWindowMetrics().getBounds();barParams.width=Math.min(Ui.dp(this,294),bounds.width());barParams.x=Math.max(0,Math.min(bounds.width()-barParams.width,barParams.x));barParams.y=Math.max(0,Math.min(bounds.height()-barParams.height,barParams.y));wm.updateViewLayout(bar,barParams);}if(running){generation++;pendingFrames.clear();temporal=new TemporalVision();nextCapture=0;lastFullOcrAt=-10000;}}
     public void reloadProfile(){profile=Profile.load(this);engine=new FarmEngine(profile.config());pendingFrames.clear();temporal=new TemporalVision();earliestGameplayObservationAt=0;hudTokens=Collections.emptyList();hudCapturedAt=-1;setStatus("Ready · "+profile.name);}
-    public void pause(String reason){running=false;observe=false;previewRequested=false;generation++;pendingFrames.clear();if(engine!=null){engine.stop();FarmEngine.RunMap report;while((report=engine.takeFinishedMap())!=null)mapBacklog.addLast(report);writeNextMap();}cancelTouches();log(reason);setStatus("Paused · "+reason);}
+    public void pause(String reason){running=false;observe=false;previewRequested=false;generation++;pendingFrames.clear();if(engine!=null){if(engine.adSessionActive()&&!destroyed&&!reason.equals("Stopped"))engine.suspendAd();else engine.stop();FarmEngine.RunMap report;while((report=engine.takeFinishedMap())!=null)mapBacklog.addLast(report);writeNextMap();}cancelTouches();log(reason);setStatus("Paused · "+reason);}
     private void cancelTouches(){/* Already-issued batches release in at most 700 ms; queued batches are cancelled by generation. */}
     public void showOverlay(){overlayWanted=true;if(bar!=null){restoreBar();return;}
         bar=new LinearLayout(this);bar.setOrientation(LinearLayout.HORIZONTAL);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(Ui.dp(this,10),0,Ui.dp(this,4),0);bar.setBackground(Ui.bg(Ui.BG,Ui.dp(this,24)));bar.setElevation(Ui.dp(this,8));
@@ -66,32 +68,35 @@ public final class FarmerService extends AccessibilityService {
         status=Ui.text(this,"Ready · 7 jumps",12,Ui.INK);status.setMaxLines(2);status.setEllipsize(android.text.TextUtils.TruncateAt.END);status.setPadding(Ui.dp(this,9),0,Ui.dp(this,5),0);bar.addView(status,new LinearLayout.LayoutParams(0,-1,1));
         runButton=overlayButton("Run",()->{if(running)pause("User paused");else start(false);});bar.addView(runButton,new LinearLayout.LayoutParams(Ui.dp(this,62),Ui.dp(this,44)));
         Button more=overlayButton("•••",()->{});more.setContentDescription("More controls");more.setOnClickListener(v->showMenu(more));bar.addView(more,new LinearLayout.LayoutParams(Ui.dp(this,44),Ui.dp(this,44)));
-        int width=Ui.dp(this,294);Rect display=wm.getMaximumWindowMetrics().getBounds();
+        Rect display=wm.getMaximumWindowMetrics().getBounds();int width=Math.min(Ui.dp(this,294),display.width());
         barParams=new WindowManager.LayoutParams(width,Ui.dp(this,50),WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);barParams.gravity=Gravity.TOP|Gravity.LEFT;barParams.x=Math.max(0,display.width()-width-Ui.dp(this,54));barParams.y=Ui.dp(this,6);
         status.setGravity(Gravity.CENTER_VERTICAL);status.setOnTouchListener(new View.OnTouchListener(){float x,y;int sx,sy;public boolean onTouch(View v,MotionEvent e){if(e.getAction()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();sx=barParams.x;sy=barParams.y;return true;}if(e.getAction()==MotionEvent.ACTION_MOVE){Rect bounds=wm.getMaximumWindowMetrics().getBounds();barParams.x=Math.max(0,Math.min(bounds.width()-bar.getWidth(),sx+(int)(e.getRawX()-x)));barParams.y=Math.max(0,Math.min(bounds.height()-bar.getHeight(),sy+(int)(e.getRawY()-y)));wm.updateViewLayout(bar,barParams);return true;}if(e.getAction()==MotionEvent.ACTION_UP)v.performClick();return true;}});wm.addView(bar,barParams);
     }
     private Button overlayButton(String label,Runnable action){Button b="•••".equals(label)?Ui.secondaryButton(this,label,action):Ui.button(this,label,action);b.setTextSize(12);b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);b.setMinHeight(0);b.setMinimumHeight(0);return b;}
     private void restoreBar(){if(bar!=null)bar.setVisibility(overlayWanted&&calibration==null&&preview==null?View.VISIBLE:View.GONE);}
-    private void showMenu(View anchor){LinearLayout menu=Ui.column(this);menu.setPadding(12,8,12,8);menu.setBackground(Ui.bg(Ui.PANEL,Ui.dp(this,16)));PopupWindow popup=new PopupWindow(menu,Ui.dp(this,240),-2,true);popup.setBackgroundDrawable(Ui.bg(Ui.PANEL,Ui.dp(this,16)));popup.setOutsideTouchable(true);popup.setElevation(Ui.dp(this,10));
+    private void showMenu(View anchor){LinearLayout menu=Ui.column(this);menu.setPadding(12,8,12,8);menu.setBackground(Ui.bg(Ui.PANEL,Ui.dp(this,16)));ScrollView scroll=new ScrollView(this);scroll.addView(menu);PopupWindow popup=new PopupWindow(scroll,Ui.dp(this,240),-2,true);popup.setBackgroundDrawable(Ui.bg(Ui.PANEL,Ui.dp(this,16)));popup.setOutsideTouchable(true);popup.setElevation(Ui.dp(this,10));
+        menuPopup=popup;popup.setOnDismissListener(()->{menuPopup=null;nextCapture=0;});
+        menu.addView(Ui.text(this,lastReason,12,Ui.MUTED));
         menuAction(menu,popup,"Observe without touches",()->start(true));
         menuAction(menu,popup,"Build & Hookshots",()->{pause("Editing build");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("editBuild",true));});
         menuAction(menu,popup,"Calibrate controls",this::calibrate);
         menuAction(menu,popup,"Preview captured game",this::previewCapture);
         menuAction(menu,popup,"Saved maps & laptop transfer",()->{pause("Opening saved maps");startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("openMaps",true));});
         menuAction(menu,popup,compatibilityCapture?"Capture: compatibility ✓":"Capture: clean window ✓",()->{pause("Capture mode changed");compatibilityCapture=!compatibilityCapture;getSharedPreferences("capture",0).edit().putBoolean("compatibility",compatibilityCapture).apply();setStatus(compatibilityCapture?"Compatibility capture enabled":"Clean window capture enabled");});
-        menuAction(menu,popup,"Stop & hide",()->{pause("Stopped");overlayWanted=false;restoreBar();});popup.showAsDropDown(anchor,-Ui.dp(this,196),Ui.dp(this,4));
+        menuAction(menu,popup,"Stop & hide",()->{pause("Stopped");overlayWanted=false;restoreBar();});Rect bounds=wm.getMaximumWindowMetrics().getBounds();menu.measure(View.MeasureSpec.makeMeasureSpec(Ui.dp(this,240),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));int height=Math.min(menu.getMeasuredHeight(),Math.max(Ui.dp(this,48),bounds.height()-Ui.dp(this,16)));popup.setHeight(height);popup.showAtLocation(bar,Gravity.TOP|Gravity.LEFT,Math.max(0,Math.min(barParams.x,bounds.width()-Ui.dp(this,240))),Math.max(0,Math.min(barParams.y+barParams.height+Ui.dp(this,4),bounds.height()-height)));
     }
     private void menuAction(LinearLayout menu,PopupWindow popup,String label,Runnable action){Button b=Ui.button(this,label,()->{popup.dismiss();handler.postDelayed(action,80);});menu.addView(b,new LinearLayout.LayoutParams(-1,Ui.dp(this,48)));}
-    private void start(boolean dry){if(calibration!=null||preview!=null)return;if(!GAME.equals(foregroundPackage())){setStatus("Open Corebound first");return;}reloadProfile();generation++;engine.reset(SystemClock.elapsedRealtime());running=true;observe=dry;nextCapture=0;lastOcrAt=0;captureErrors=slowFrames=0;writeNextMap();log(dry?"Observe: predictions only, no touches":"Run started: "+profile.name);setStatus(dry?"Observing…":"Starting…");}
-    private void setStatus(String s){lastReason=s;if(status!=null)status.setText(s);if(runButton!=null)runButton.setText(running?"Pause":"Run");}
+    private void start(boolean dry){if(calibration!=null||preview!=null)return;String pkg=foregroundPackage();boolean resumeAd=!dry&&engine.adSessionActive();if(!GAME.equals(pkg)&&!(resumeAd&&STORE.equals(pkg))){setStatus(resumeAd?"Ad paused · return to the ad, then Run":"Open Corebound first");return;}if(resumeAd)engine.resumeAd();else{reloadProfile();engine.reset(SystemClock.elapsedRealtime());}generation++;running=true;observe=dry;nextCapture=0;lastOcrAt=0;lastFullOcrAt=-10000;captureErrors=slowFrames=0;writeNextMap();log(dry?"Observe: predictions only, no touches":"Run started: "+profile.name);setStatus(dry?"Observing…":resumeAd?"Watching ad…":"Starting…");}
+    private void setStatus(String s){lastReason=s;if(status!=null){String compact=s;if(running&&engine!=null){String stage=engine.adSessionActive()?s.toLowerCase(Locale.ROOT).contains("countdown")?"Ad countdown":"Watching ad":observe?"Observing":engine.state()==FarmEngine.State.GAMEPLAY?engine.navigationPhase().replace('_',' ').toLowerCase(Locale.ROOT):engine.state().name().replace('_',' ').toLowerCase(Locale.ROOT);stage=stage.replace("scout high ceiling","Scouting roof").replace("remaining enemy sweep","Finding missed bots").replace("return ground","Returning to ground").replace("revisit enemy","Returning to bot").replace("ground sweep","Jump & sweep").replace("drop to corridor","Following drop");compact=engine.runs()+" runs\n"+stage;}status.setText(compact);status.setContentDescription(s);}if(runButton!=null)runButton.setText(running?"Pause":"Run");}
     public String statusLine(){return lastReason;}
     private void log(String s){long now=SystemClock.elapsedRealtime();if(!logs.isEmpty()&&logs.peekLast().endsWith(s)&&now-lastLogged<3000)return;lastLogged=now;logs.addLast(android.text.format.DateFormat.format("HH:mm:ss",new java.util.Date())+"  "+s);while(logs.size()>80)logs.removeFirst();getSharedPreferences("session",0).edit().putString("log",logText()).apply();}
     public String logText(){StringBuilder b=new StringBuilder();for(String s:logs)b.append(s).append('\n');return b.toString();}
-    private String foregroundPackage(){List<AccessibilityWindowInfo> windows=getWindows();for(AccessibilityWindowInfo w:windows){if(w.getType()!=AccessibilityWindowInfo.TYPE_APPLICATION||(!w.isActive()&&!w.isFocused()))continue;AccessibilityNodeInfo n=w.getRoot();if(n==null)continue;CharSequence p=n.getPackageName();String s=p==null?"":p.toString();n.recycle();if(!s.equals(getPackageName()))return s;else return s;}AccessibilityNodeInfo n=getRootInActiveWindow();if(n==null)return "";String p=n.getPackageName()==null?"":n.getPackageName().toString();n.recycle();return p;}
+    private String foregroundPackage(){List<AccessibilityWindowInfo> windows=getWindows();for(AccessibilityWindowInfo w:windows){if(w.getType()!=AccessibilityWindowInfo.TYPE_APPLICATION||(!w.isActive()&&!w.isFocused()))continue;AccessibilityNodeInfo n=w.getRoot();if(n==null)continue;CharSequence p=n.getPackageName();String s=p==null?"":p.toString();n.recycle();if(!s.isEmpty()&&!s.equals(getPackageName()))return s;}AccessibilityNodeInfo n=getRootInActiveWindow();if(n==null)return "";String p=n.getPackageName()==null?"":n.getPackageName().toString();n.recycle();return p;}
 
     private void capture(boolean forCalibration){
-        if(inFlight||destroyed)return;String pkg=foregroundPackage();
-        if(!GAME.equals(pkg)&&!STORE.equals(pkg)){if(running)pause("Foreground changed · open Corebound");return;}
+        if(inFlight||destroyed||menuPopup!=null&&menuPopup.isShowing())return;String pkg=foregroundPackage();
+        if(pkg.isEmpty()){long now=SystemClock.elapsedRealtime();if(foregroundMissingAt<0)foregroundMissingAt=now;nextCapture=now+350;if(now-foregroundMissingAt>5000)pause("Screen unavailable · press Run when visible");return;}foregroundMissingAt=-1;
+        if(!GAME.equals(pkg)&&!STORE.equals(pkg)){if(running&&engine.adSessionActive()){long now=SystemClock.elapsedRealtime();if(externalAdAt<0)externalAdAt=now;nextCapture=now+500;setStatus("Ad opened another window · waiting for its return");if(now-externalAdAt>120000)pause("Ad window did not return · close it, then Run");}else if(running)pause("Foreground changed · farming paused");return;}externalAdAt=-1;
         if(((KeyguardManager)getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked()){pause("Phone locked");return;}
         // Play Store commonly rotates to portrait. Its recovery needs only package provenance,
         // never an OCR screenshot or game coordinates.
@@ -130,7 +135,8 @@ public final class FarmerService extends AccessibilityService {
     private void recognise(Bitmap bitmap,PixelVision.Result vision,String pkg,long capturedAt,int ticket){
         if(ticket!=generation||destroyed){bitmap.recycle();inFlight=false;return;}
         long now=SystemClock.elapsedRealtime();
-        if(vision.gameplay&&engine.state()==FarmEngine.State.GAMEPLAY&&vision.playerConfidence>=.38){
+        boolean fullReadDue=now-lastFullOcrAt>=1500;
+        if(!fullReadDue&&vision.gameplay&&vision.controlsDetected&&engine.state()==FarmEngine.State.GAMEPLAY&&vision.playerConfidence>=.5){
             List<FarmEngine.Token> freshHud=now-hudCapturedAt<=1500?hudTokens:Collections.emptyList();
             // Drive from pixels immediately. HUD OCR is independent and cannot
             // hold the next movement observation behind its completion callback.
@@ -140,12 +146,13 @@ public final class FarmerService extends AccessibilityService {
             else bitmap.recycle();
             return;
         }
-        if(vision.gameplay&&(vision.controlsDetected||vision.playerConfidence>.5)&&engine.state()==FarmEngine.State.GAMEPLAY&&now-lastOcrAt<900){processFrame(vision,pkg,capturedAt,ticket,Collections.emptyList());bitmap.recycle();inFlight=false;return;}
+        if(!fullReadDue&&vision.gameplay&&vision.controlsDetected&&vision.playerConfidence>.5&&engine.state()==FarmEngine.State.GAMEPLAY&&now-lastOcrAt<900){processFrame(vision,pkg,capturedAt,ticket,Collections.emptyList());bitmap.recycle();inFlight=false;return;}
         lastOcrAt=now;
         // The menu's narrow tier line is the selection failure seen in both trials.
         // Magnify the selected right panel; map all OCR boxes back to the full image.
-        final boolean hudOnly=vision.gameplay&&engine.state()==FarmEngine.State.GAMEPLAY
+        final boolean hudOnly=!fullReadDue&&vision.gameplay&&engine.state()==FarmEngine.State.GAMEPLAY
                 &&(vision.controlsDetected||vision.playerConfidence>.5);
+        if(!hudOnly)lastFullOcrAt=now;
         final int textLeft=vision.selectedPanel?(int)(bitmap.getWidth()*.54):0;
         final int textTop=vision.selectedPanel?(int)(bitmap.getHeight()*.48):0;
         final int textScale=vision.selectedPanel||hudOnly?2:1;
@@ -181,6 +188,7 @@ public final class FarmerService extends AccessibilityService {
     }
     private void processFrame(PixelVision.Result vision,String pkg,long capturedAt,int ticket,List<FarmEngine.Token> tokens,long textCapturedAt){
         if(ticket!=generation||!running||destroyed)return;
+        if(menuPopup!=null&&menuPopup.isShowing()){pendingFrames.clear();nextCapture=0;return;}
         // Capture continues during movement; only the newest frame survives. Camera
         // offsets are cumulative, so dropping an intermediate frame loses no motion.
         if(gestureBusy){pendingFrames.offer(new Observation(vision,pkg,capturedAt,ticket,tokens,textCapturedAt),capturedAt,ticket);return;}
@@ -216,10 +224,16 @@ public final class FarmerService extends AccessibilityService {
     private void collectNodes(List<FarmEngine.Token> tokens,StringBuilder text){AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return;try{if(!GAME.contentEquals(root.getPackageName()==null?"":root.getPackageName()))return;ArrayDeque<AccessibilityNodeInfo> queue=new ArrayDeque<>();queue.add(AccessibilityNodeInfo.obtain(root));int count=0;while(!queue.isEmpty()&&count++<180){AccessibilityNodeInfo n=queue.remove();CharSequence label=n.getText()!=null?n.getText():n.getContentDescription();if(label!=null&&n.isVisibleToUser()){String s=label.toString();Rect r=new Rect();n.getBoundsInScreen(r);if(!r.isEmpty()&&screenW>0){tokens.add(new FarmEngine.Token(s,r.left/(double)screenW,r.top/(double)screenH,r.right/(double)screenW,r.bottom/(double)screenH));text.append(s).append('\n');}}for(int i=0;i<n.getChildCount();i++){AccessibilityNodeInfo child=n.getChild(i);if(child!=null)queue.add(child);}n.recycle();}while(!queue.isEmpty())queue.remove().recycle();}finally{root.recycle();}}
 
     private void execute(FarmEngine.Action a,PixelVision.Result v,String pkg,int ticket){
+        if(menuPopup!=null&&menuPopup.isShowing()){pendingFrames.clear();nextCapture=0;return;}
         if(ticket!=generation||!running)return;if(!pkg.equals(foregroundPackage())){pause("Screen changed before action");return;}
         Rect geometry=wm.getMaximumWindowMetrics().getBounds();
         if((a.kind==FarmEngine.Kind.TAP||a.kind==FarmEngine.Kind.MOVE)&&(geometry.width()!=screenW||geometry.height()!=screenH)){nextCapture=0;log("Display rotated; waiting for a new screenshot");return;}
-        switch(a.kind){case PAUSE:pause(a.reason);break;case WAIT:nextCapture=SystemClock.elapsedRealtime()+Math.max(150,a.durationMs);break;case BACK:performGlobalAction(GLOBAL_ACTION_BACK);nextCapture=SystemClock.elapsedRealtime()+800;break;case TAP:dispatch(TouchPlan.tap(screenW,screenH,a.x,a.y),ticket);break;case MOVE:
+        switch(a.kind){case PAUSE:pause(a.reason);break;case WAIT:nextCapture=SystemClock.elapsedRealtime()+Math.max(150,a.durationMs);break;case BACK:performGlobalAction(GLOBAL_ACTION_BACK);nextCapture=SystemClock.elapsedRealtime()+800;break;case TAP:
+            if(bar!=null&&new Rect(barParams.x,barParams.y,barParams.x+barParams.width,barParams.y+barParams.height).contains((int)(a.x*screenW),(int)(a.y*screenH))){
+                // The recognized ad X can lie underneath the draggable controls.
+                // Let the touch reach that screen instead of pressing our own bar.
+                bar.setVisibility(View.INVISIBLE);gestureBusy=true;handler.postDelayed(()->{if(ticket==generation&&running&&pkg.equals(foregroundPackage()))dispatch(TouchPlan.tap(screenW,screenH,a.x,a.y),ticket);else{gestureBusy=false;restoreBar();nextCapture=0;}},65);
+            }else dispatch(TouchPlan.tap(screenW,screenH,a.x,a.y),ticket);break;case MOVE:
             double x=a.direction<0?profile.leftX:profile.rightX,y=a.direction<0?profile.leftY:profile.rightY;
             if(profile.autoControls&&v.controlsDetected){if(a.direction<0&&v.leftX>0){x=v.leftX;y=v.leftY;}if(a.direction>0&&v.rightX>0){x=v.rightX;y=v.rightY;}}
             if(a.direction==0&&a.jumpCount==0){nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+50);break;}
@@ -227,7 +241,7 @@ public final class FarmerService extends AccessibilityService {
             dispatch(TouchPlan.build(screenW,screenH,x,y,a.direction!=0,profile.jumpX,profile.jumpY,a.jumpCount,a.jumpSpacingMs,profile.jumpMs,a.durationMs),ticket);break;default:break;}
     }
     private void dispatch(GestureDescription gesture,int ticket){
-        gestureBusy=true;boolean accepted=dispatchGesture(gesture,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){gestureBusy=false;if(ticket!=generation||!running)return;Observation latest=pendingFrames.take(SystemClock.elapsedRealtime(),generation,1000,earliestGameplayObservationAt);nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+35);if(latest!=null)processFrame(latest.vision,latest.pkg,latest.capturedAt,latest.ticket,latest.tokens,latest.textCapturedAt);}@Override public void onCancelled(GestureDescription g){gestureBusy=false;pendingFrames.clear();if(ticket==generation&&running)pause("Touch interrupted · press Run when ready");}},handler);if(!accepted){gestureBusy=false;pendingFrames.clear();pause("Android rejected touch input");}
+        gestureBusy=true;boolean accepted=dispatchGesture(gesture,new GestureResultCallback(){@Override public void onCompleted(GestureDescription g){gestureBusy=false;restoreBar();if(ticket!=generation||!running)return;Observation latest=pendingFrames.take(SystemClock.elapsedRealtime(),generation,1000,earliestGameplayObservationAt);nextCapture=Math.max(lastScreenshotAt+350,SystemClock.elapsedRealtime()+35);if(latest!=null)processFrame(latest.vision,latest.pkg,latest.capturedAt,latest.ticket,latest.tokens,latest.textCapturedAt);}@Override public void onCancelled(GestureDescription g){gestureBusy=false;restoreBar();pendingFrames.clear();if(ticket==generation&&running)pause("Touch interrupted · press Run when ready");}},handler);if(!accepted){gestureBusy=false;restoreBar();pendingFrames.clear();pause("Android rejected touch input");}
     }
     private void previewCapture(){pause("Previewing game capture");if(inFlight){handler.postDelayed(this::previewCapture,300);return;}previewRequested=true;capture(false);}
     private void showPreview(Bitmap screenshot){hidePreview();preview=new CapturePreview(this,screenshot);restoreBar();WindowManager.LayoutParams p=new WindowManager.LayoutParams(-1,-1,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.LEFT;p.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;wm.addView(preview,p);}

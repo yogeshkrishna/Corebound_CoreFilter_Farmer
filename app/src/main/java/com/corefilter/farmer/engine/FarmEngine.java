@@ -30,7 +30,7 @@ public final class FarmEngine {
         public long now, capturedAt;
         public String packageName = "", text = "";
         public List<Token> tokens = Collections.emptyList();
-        public boolean captureOk = true, gameplay, gate, filterLoot, filterOffer;
+        public boolean captureOk = true, gameplay, controlsDetected, gate, filterLoot, filterOffer;
         public boolean observedAd, endScreen, crateScreen, targetSelected, uncertainFilterOffer;
         public boolean grounded, groundContactCandidate, ceilingReached, playButton, selectedPanel;
         public double playerConfidence, playX = -1, playY = -1;
@@ -117,6 +117,8 @@ public final class FarmEngine {
     private boolean inRun, resultCounted, rewardRequested, observedAd, stopAfterResult;
     private boolean verifiedSelection;
     private boolean runStartRequested;
+    private State suspendedState;
+    private int adReturnViews;
 
 
     public FarmEngine(Config config) {
@@ -124,6 +126,7 @@ public final class FarmEngine {
         this.navigator = new MapNavigator(this.config);
     }
     public synchronized MapNavigator.Snapshot navigationSnapshot() { return navigator.snapshot(); }
+    public synchronized String navigationPhase() { return navigator.phase(); }
     public synchronized RunMap takeFinishedMap() { return finishedMaps.pollFirst(); }
     /** Capture adapter resets registration only for an actual authorized Play/Retry tap. */
     public synchronized boolean takeRunStartRequest() {
@@ -146,6 +149,9 @@ public final class FarmEngine {
         return Action.waitFor(status);
     }
     public synchronized State state() { return state; }
+    public synchronized boolean adSessionActive() { return isAdState() || state==State.PAUSED && (suspendedState==State.REWARD_AD || suspendedState==State.INTERSTITIAL); }
+    public synchronized void suspendAd() { if(isAdState()){suspendedState=state;state=State.PAUSED;busyUntil=0;} }
+    public synchronized void resumeAd() { if(adSessionActive()){state=suspendedState;suspendedState=null;lastCapture=-1;busyUntil=0;adReturnViews=0;} }
     public synchronized String status() { return status; }
     public synchronized int runs() { return (int) Math.min(Integer.MAX_VALUE, completedRuns); }
     public synchronized int completedRuns() { return runs(); }
@@ -171,6 +177,7 @@ public final class FarmEngine {
         inRun = resultCounted = rewardRequested = observedAd = stopAfterResult = false;
         verifiedSelection = false; resetNavigation();
         runStartRequested = false;
+        suspendedState=null;adReturnViews=0;
     }
 
     public synchronized Action next(Frame f) {
@@ -288,17 +295,21 @@ public final class FarmEngine {
     private void beginAd(long now, boolean reward) {
         state = reward ? State.REWARD_AD : State.INTERSTITIAL;
         adSince = now; rewardRequested = reward; observedAd = false; unknownSince = -1;storeBacks=0;
+        adReturnViews=0;
     }
 
     private Action handleAd(Frame f, String text) {
-        boolean gameReturned = f.gameplay || f.endScreen || f.crateScreen || selectedTarget(f)
+        // A yellow creative or an ad's game footage is insufficient return evidence.
+        boolean gameReturned = f.gameplay && f.controlsDetected && f.playerConfidence>=.55 || f.endScreen || f.crateScreen || selectedTarget(f)
                 || (!f.observedAd && button(f, "retry", "replay", "play again") != null);
         boolean adSignal = f.observedAd || has(text, "advertisement", "sponsored", "skip video", "skip ad", "ad ends in");
+        adReturnViews=gameReturned&&!adSignal?adReturnViews+1:0;
         if(gameReturned&&!adSignal&&rewardRequested&&!observedAd){
             if(f.now-adSince>15000)return pause("Filter reward ad did not open; retry the offer manually");
             return Action.waitFor("Waiting for the filter reward ad to open");
         }
         if (gameReturned && !adSignal && (observedAd || f.now - adSince > 2500)) {
+            if(adReturnViews<2)return Action.waitFor("Checking that the ad has returned to Corebound");
             if (rewardRequested && observedAd) adsWatched++;
             observedAd = false; adSince = -1;
             state = inRun ? State.END_SCREEN : State.IDLE;
@@ -386,7 +397,7 @@ public final class FarmEngine {
         if (now - unknownSince > clamp(config.unknownTimeoutMs, 3000, 120000)) return pause(reason + "; manual check needed");
         status = reason; return Action.waitFor(reason);
     }
-    private Action pause(String reason) { state = State.PAUSED; status = reason; return new Action(Kind.PAUSE, 0, 0, 0, false, 0, reason); }
+    private Action pause(String reason) { if(isAdState())suspendedState=state;state = State.PAUSED; status = reason; return new Action(Kind.PAUSE, 0, 0, 0, false, 0, reason); }
     private Action move(int direction, int jumps, long duration, long now, String reason) {
         long spacing = clamp(config.jumpSpacingMs, 250, 1200);
         long actualDuration = Math.min(700, Math.max(duration, jumps > 0

@@ -5,6 +5,13 @@ import java.util.Arrays;
 import static org.junit.Assert.*;
 
 public class ScreenInterpreterTest {
+    @Test public void installCardOverridesFalseGameplayPixels(){
+        PixelVision.Result v=new PixelVision.Result();v.gameplay=true;v.playerConfidence=.9;v.controlsDetected=true;
+        FarmEngine.Frame f=ScreenInterpreter.interpret(1000,1000,"com.Overcurve.Corebound",Arrays.asList(new FarmEngine.Token("Install",.55,.4,.8,.5),new FarmEngine.Token("Google Play",.36,.88,.50,.95)),v);
+        assertTrue(f.observedAd);assertFalse(f.gameplay);
+        assertEquals(FarmEngine.State.INTERSTITIAL,stateAfter(f));
+    }
+    private FarmEngine.State stateAfter(FarmEngine.Frame f){FarmEngine e=new FarmEngine(new FarmEngine.Config());e.next(f);return e.state();}
     @Test public void registeredTerrainAndContactsReachPlannerUnchanged(){
         PixelVision.Result v=new PixelVision.Result();v.gameplay=true;v.playerConfidence=.9;
         v.playerLeft=.4;v.playerRight=.46;v.playerTop=.5;v.playerBottom=.6;v.wallRight=true;

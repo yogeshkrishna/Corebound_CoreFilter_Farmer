@@ -6,6 +6,15 @@ import static org.junit.Assert.*;
 import static com.corefilter.farmer.engine.FarmEngine.*;
 
 public class FarmEngineTest {
+    @Test public void adCannotReturnOnFalseGameplayAndPauseResumeKeepsStoreProvenance(){
+        FarmEngine e=new FarmEngine(new Config());Frame ad=frame(0,"Advertisement");ad.observedAd=true;e.next(ad);
+        Frame creative=game(1000);creative.controlsDetected=false;
+        assertEquals(Kind.WAIT,e.next(creative).kind);assertEquals(State.INTERSTITIAL,e.state());
+        e.suspendAd();assertTrue(e.adSessionActive());e.resumeAd();
+        Frame store=frame(3000,"");store.packageName="com.android.vending";assertEquals(Kind.BACK,e.next(store).kind);
+        Frame returning=game(5000);returning.controlsDetected=true;assertEquals(Kind.WAIT,e.next(returning).kind);assertEquals(State.INTERSTITIAL,e.state());
+        returning=game(5500);returning.controlsDetected=true;e.next(returning);assertFalse(e.adSessionActive());
+    }
     private static final String GAME = "com.Overcurve.Corebound";
     private Token token(String text, double x, double y) { return new Token(text, x-.04, y-.02, x+.04, y+.02); }
     private Frame frame(long now, String text, Token... tokens) { return new Frame(now, GAME, text, Arrays.asList(tokens)); }
@@ -144,8 +153,9 @@ public class FarmEngineTest {
         assertEquals(0, e.adsWatched());
         f = frame(4000, "", token("X", .94, .08)); e.next(f);
         e.next(end(6000, token("Continue", .34, .88)));
-        assertEquals(1, e.adsWatched());
+        assertEquals(0, e.adsWatched());
         e.next(end(7000, token("Continue", .34, .88)));
+        assertEquals(1, e.adsWatched());
         assertEquals(1, e.completedRuns()); assertEquals(1, e.adsWatched());
     }
 

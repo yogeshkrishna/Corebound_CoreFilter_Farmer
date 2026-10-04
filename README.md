@@ -4,7 +4,7 @@ A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, 
 
 **[Download the latest APK](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** · Android 11 or later
 
-Version 0.4.2 repairs skipped ceiling scouts and missed cavern turns. Unknown space above the crawler triggers a scout after the normal jump; a horizontal roof needs another inspection view before descent. Sector-completed banners now reach the controller, and a closed old direction with an observed passage on the other side can establish a turn without a registered floor. Landing alone cannot invert an already corrected direction again. Rectangle-face recovery and foot clearance improve terrain/support measurements. Raw terrain views are retained through camera gaps for export. Live farming performance still needs a phone trial.
+Version 0.4.3 repairs high-roof climbing and ad transitions. Scouts chain individual Hookshots before the estimated crest and can climb vertically beside a wall. Map realignment preserves active scouts; a blocked ground return cannot loop forever. Install-card text overrides misleading gameplay pixels, and two fresh game observations confirm an ad has ended. Pausing an ad retains its context for resume and Play Store recovery. The overlay shows short stages with details in its menu. Live performance still needs a phone trial.
 
 ## Install this update
 
@@ -50,7 +50,7 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.2.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.3.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 
