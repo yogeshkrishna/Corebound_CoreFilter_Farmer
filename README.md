@@ -4,7 +4,7 @@ A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, 
 
 **[Download the latest APK](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** · Android 11 or later
 
-Version 0.4.0 replaces the flying grid planner with a corridor controller. Normal traversal moves and jumps forward; extra Hookshots scout only upper areas that normal traversal cannot reveal. Rectangular terrain, downward turns, missed enemies and observed ceiling coverage have separate records. Each finished run saves a map picture and raw data for verified transfer to a laptop on the same Wi-Fi. This update still needs a phone trial; complete live coverage and a maximum filters-per-hour rate are not established.
+Version 0.4.1 fixes a movement deadlock in 0.4.0: missing camera registration no longer makes a crawler standing on the floor wait indefinitely. Fresh local support drives forward jumping independently of mapping, ignored entry jumps can be retried, and gameplay HUD reading runs separately from steering. Hidden roofs still use individual Hookshots, followed by a ground return; downward openings retain their turn state across camera gaps. Finished and paused runs save a map picture, raw observations and recent decisions for verified transfer to your laptop. Live farming performance still needs a phone trial.
 
 ## Install this update
 
@@ -40,7 +40,7 @@ The navigator enters the corridor before selecting backward targets, jump-moves 
 
 After runs, open **Saved maps & Wi-Fi transfer → Start Wi-Fi transfer** and keep that page open. Connect the laptop to the same Wi-Fi and open the displayed link. The laptop page provides a receiver for Windows and previews of saved maps. The receiver saves each ZIP, verifies its checksum, and acknowledges it before the app deletes that exact phone copy. Failed or interrupted transfers keep the phone files.
 
-Each ZIP contains **map.png** and **map.json**: observed floor, ceiling and wall boundaries, the traversed path, ceiling inspection, enemy observations, coordinate units, confidence and build settings. Unknown areas remain blank. Camera gaps that cannot be linked appear in separate panels. These records support future investigation of a fixed layout pool; the current controller does not assume one or reuse an unverified layout. See [transfer steps](docs/map-export.md).
+Each ZIP contains **map.png** and **map.json**: observed floor, ceiling and wall boundaries, the traversed path, ceiling inspection, enemy observations, coordinate units, confidence, build settings and the latest 1,200 steering decisions. Pausing an active run also saves its partial record. Unknown areas remain blank. Camera gaps that cannot be linked appear in separate panels. These records support future investigation of a fixed layout pool; the current controller does not assume one or reuse an unverified layout. See [transfer steps](docs/map-export.md).
 
 Results are recognized before animation-speed taps. Continue and crate Close are followed by another verified Play on the selected target. A bare Play button cannot authorize a different level. Session/run-count caps are optional; per-run, capture, unknown-screen and stuck-recovery watchdogs remain active.
 
@@ -50,7 +50,7 @@ The reward strip, rather than a presumed Spectrum kill or main loot, determines 
 
 The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
 
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.0.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
+Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.1.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
 
 ## Privacy
 

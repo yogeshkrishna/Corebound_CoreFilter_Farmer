@@ -61,5 +61,12 @@ public class RunMapTest {
         select.targetSelected=true;assertEquals(Kind.TAP,e.next(select).kind);
         assertTrue(e.takeRunStartRequest());assertFalse(e.takeRunStartRequest());
     }
+    @Test public void stoppingAnActiveRunRetainsPartialMapAndDecisionTraceOnce() {
+        FarmEngine e=new FarmEngine(new Config());e.next(gameplay(0));e.next(gameplay(500));e.stop();
+        RunMap report=e.takeFinishedMap();assertNotNull(report);assertEquals("interrupted",report.outcome);
+        assertTrue(report.snapshot.controlTrace.length>0);assertTrue(report.snapshot.cells.length>0);
+        assertEquals(0,e.completedRuns());assertEquals(0,e.deaths());
+        e.stop();assertNull(e.takeFinishedMap());
+    }
     private State after(FarmEngine e,Frame f){e.next(f);return e.state();}
 }

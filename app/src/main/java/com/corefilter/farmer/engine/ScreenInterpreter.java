@@ -17,7 +17,7 @@ public final class ScreenInterpreter {
         if(tokens==null)tokens=Collections.emptyList();
         StringBuilder text=new StringBuilder();for(FarmEngine.Token t:tokens)text.append(t.text).append('\n');
         FarmEngine.Frame f=new FarmEngine.Frame(now,pkg,text.toString(),tokens);f.capturedAt=capturedAt;f.gameplay=v.gameplay;f.gate=v.gate;f.gateX=v.gateX;f.gateY=v.gateY;f.playerX=v.playerX;f.playerY=v.playerY;f.sceneSignature=v.sceneSignature;
-        f.playerConfidence=v.playerConfidence;f.grounded=v.grounded;f.ceilingReached=v.ceilingReached;
+        f.playerConfidence=v.playerConfidence;f.grounded=v.grounded;f.groundContactCandidate=v.groundContactCandidate;f.ceilingReached=v.ceilingReached;
         f.playerLeft=v.playerLeft;f.playerTop=v.playerTop;f.playerRight=v.playerRight;f.playerBottom=v.playerBottom;f.wallLeft=v.wallLeft;f.wallRight=v.wallRight;
         f.terrainCols=v.terrainCols;f.terrainRows=v.terrainRows;f.terrainCells=v.terrainCells;
         f.cameraDx=v.cameraDx;f.cameraDy=v.cameraDy;f.cameraX=v.cameraX;f.cameraY=v.cameraY;f.cameraConfidence=v.cameraConfidence;

@@ -41,7 +41,7 @@ public final class TemporalVision {
             rememberPlayer(result,now);return;
         }
         if(now<=anchorAt)return;
-        if(anchor.foregroundCount<9&&current.foregroundCount>=9) {
+        if(anchor.foregroundCount<6&&current.foregroundCount>=6) {
             // Initial blank air did not supply an origin. Attach the first usable
             // foreground at the same local origin, without claiming a new room.
             anchor=current;anchorAt=now;failed=0;rememberPlayer(result,now);return;
@@ -61,7 +61,7 @@ public final class TemporalVision {
             // longer overlaps after a large drop, require three mutually coherent
             // foreground views before exposing a new *local* coordinate origin.
             // This declares lost registration, never a new room or sector.
-            if(current.foregroundCount>=15) {
+            if(current.foregroundCount>=8) {
                 if(recoveryAnchor!=null&&register(recoveryAnchor,current).confidence>=.70)recoveryMatches++;
                 else recoveryMatches=0;
                 recoveryAnchor=current;
@@ -154,7 +154,7 @@ public final class TemporalVision {
 
     private static final class Match {int dx,dy;double error=255,confidence;}
     private static Match register(Sample a,Sample b) {
-        Match result=new Match();if(a.features.size()<9||b.features.size()<9)return result;
+        Match result=new Match();if(a.features.size()<6||b.features.size()<6)return result;
         List<int[]> features=a.features;
         // Both signs and a substantial vertical range are searched independently;
         // reversing or dropping does not assume a direction or reset coordinates.
@@ -204,7 +204,7 @@ public final class TemporalVision {
         int spread=0;for(boolean used:zones)if(used)spread++;
         // A local flash, repeated tile, or two independently deforming regions
         // cannot drag the world map using one locally convenient match.
-        if(points<9||inliers<8||inliers<considered*.68||spread<3||Math.abs(result.dx)==rangeX||Math.abs(result.dy)==rangeY)result.confidence=0;
+        if(points<6||inliers<6||inliers<considered*.68||spread<2||Math.abs(result.dx)==rangeX||Math.abs(result.dy)==rangeY)result.confidence=0;
         return result;
     }
 

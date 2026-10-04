@@ -19,7 +19,7 @@ final class MapExportUi {
         if(dialog!=null&&dialog.isShowing())return;
         LinearLayout body=Ui.column(activity);int p=Ui.dp(activity,20);body.setPadding(p,0,p,p);body.setBackgroundColor(Ui.BG);
         count=Ui.text(activity,"",15,Ui.INK);body.addView(count);
-        body.addView(Ui.text(activity,"Cleared and failed runs stay in private phone storage. A ZIP includes the map picture, raw observations and your build settings.",13,Ui.MUTED));
+        body.addView(Ui.text(activity,"Cleared, failed and paused runs stay in private phone storage. A ZIP includes the map picture, raw observations and your build settings.",13,Ui.MUTED));
         body.addView(Ui.text(activity,"Connect your laptop to this phone's Wi-Fi network. Keep this page open during transfer.",13,Ui.MUTED));
         address=Ui.text(activity,"Sharing is stopped.",13,Ui.MINT);address.setTextIsSelectable(true);body.addView(address);
         toggle=Ui.button(activity,"Start Wi-Fi transfer",()->{if(server==null)start();else stop();});toggle.setTag("map-sharing-toggle");body.addView(toggle);

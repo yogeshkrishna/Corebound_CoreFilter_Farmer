@@ -6,6 +6,25 @@ import static com.corefilter.farmer.engine.FarmEngine.*;
 
 /** Generated worlds and actual feedback loops; no recordings are opened. */
 public class CorridorControllerTest {
+    @Test public void standingOnWeakSupportKeepsDrivingWhenMapCannotRegister(){
+        MapNavigator n=new MapNavigator(new Config());int pulses=0;
+        for(int i=0;i<14;i++){
+            Frame f=room(i*350,.50,.645,false,true);f.cameraConfidence=0;f.cameraX=f.cameraY=0;f.groundContactCandidate=true;
+            MapNavigator.Decision d=n.next(f);assertFalse(d.reason,d.pause);assertEquals(d.reason,1,d.direction);pulses+=d.jumps;
+        }
+        assertTrue("Keep retrying base jumps on observed support instead of waiting for registration",pulses>=3);
+        assertEquals("Uncertain camera observations cannot manufacture a world path",1,n.snapshot().path.length);
+    }
+    @Test public void ignoredIntroJumpDoesNotLockOutAllSubsequentJumps(){
+        MapNavigator n=new MapNavigator(new Config());int pulses=0;
+        for(int i=0;i<12;i++)pulses+=n.next(room(i*350,.45+i*.04,.715,true,true)).jumps;
+        assertTrue("No observed airtime means retry rather than permanently spend the first charge",pulses>=3);
+    }
+    @Test public void staleCachedEnemyCountDoesNotStartARevisit(){
+        MapNavigator n=new MapNavigator(new Config());n.next(room(0,.45,.715,true,true));
+        Frame f=room(4000,.75,.715,true,true);f.gate=true;f.gateX=.56;f.remainingEnemies=2;f.remainingEnemiesConfidence=.95;f.remainingEnemiesCapturedAt=500;
+        n.next(f);assertNotEquals("REMAINING_ENEMY_SWEEP",n.snapshot().phase);
+    }
     private Frame room(long at,double worldX,double y,boolean grounded,boolean roof){
         Frame f=new Frame(at,"com.Overcurve.Corebound","",null);f.gameplay=true;
         f.playerConfidence=.95;f.cameraConfidence=.95;f.cameraX=worldX-.45;f.cameraY=0;

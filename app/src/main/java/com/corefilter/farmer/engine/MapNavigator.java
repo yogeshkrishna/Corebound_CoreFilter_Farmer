@@ -41,7 +41,8 @@ public final class MapNavigator {
         public final long blockedForMs;
         /** [world x, world y, occupancy, visited] and [enemy x, enemy y, burn attempt, last seen]. */
         public final double[][] cells, enemies;
-        public final double[][] borders,path,coverage,enemyHistory;
+        public final double[][] borders,path,coverage,enemyHistory,controlTrace;
+        public final String[] controlReasons;
         private Snapshot(MapNavigator n) {
             room = n.room; mapCells = n.tiles.size(); unresolvedEnemies = n.tracks.size();
             remainingJumps = Math.max(0, n.jumpBudget() - n.usedJumps);
@@ -64,6 +65,7 @@ public final class MapNavigator {
             for (Track t : n.tracks) enemies[i++] = new double[]{t.x-t.section*SECTION_GAP, t.y, t.touchedAt < 0 ? 0 : 1, t.seenAt,t.section};
             borders=n.exportBorders();path=n.pathRows.toArray(new double[0][]);coverage=n.exportCoverage();
             enemyHistory=n.exportEnemyHistory();
+            controlTrace=n.controlRows.toArray(new double[0][]);controlReasons=n.controlReasons.toArray(new String[0]);
         }
     }
 
@@ -85,6 +87,8 @@ public final class MapNavigator {
     private final ArrayList<Track> history = new ArrayList<>();
     private final HashSet<Long> unseenRoofColumns=new HashSet<>();
     private final ArrayList<double[]> borderRows=new ArrayList<>(),pathRows=new ArrayList<>();
+    private final ArrayList<double[]> controlRows=new ArrayList<>();
+    private final ArrayList<String> controlReasons=new ArrayList<>();
     private int corridorDirection=1,corridor=1,returnTrack=-1,remainingEnemies=-1;
     private double corridorFloor=Double.NaN,returnX=Double.NaN,scoutX=Double.NaN,dropX=Double.NaN;
     private long returnAt=-1,returnDeadline=-1,dropAt=-1,releaseUntil=-1,lastTurn=-100000;
@@ -113,6 +117,17 @@ public final class MapNavigator {
     private Goal goal;
     private String reason="Waiting for the player and terrain";
     private FarmEngine.Frame frame;
+    // Local driving continues when world registration is unavailable. These
+    // observations are never used to manufacture mapped terrain or camera motion.
+    private boolean controlGrounded;
+    private int localSupportViews;
+    private double previousFoot=Double.NaN;
+    private long localSupportAt=-1,localDriveAt=-1;
+    private long lastControlAt=-1;
+    private double corridorTravelMs;
+    private boolean localDropSeen;
+    private boolean localTurnPending;
+    private double localScoutTravel=Double.NaN;
 
     public MapNavigator(FarmEngine.Config config) { this.config=config; }
     public void reset() {
@@ -129,6 +144,8 @@ public final class MapNavigator {
         reason="Waiting for the player and terrain";frame=null;pendingSceneChange=false;
         learningJump=false;jumpObservedAfter=-1;
         completedSector=0;activeSector=1;pendingAnchor=sectorCleared=false;
+        controlGrounded=false;localSupportViews=0;previousFoot=Double.NaN;localSupportAt=localDriveAt=-1;
+        lastControlAt=-1;corridorTravelMs=0;localDropSeen=localTurnPending=false;localScoutTravel=Double.NaN;controlRows.clear();controlReasons.clear();
     }
     public Snapshot snapshot() { return new Snapshot(this); }
     public int room() { return room; }
@@ -141,6 +158,7 @@ public final class MapNavigator {
     }
     private Decision next(FarmEngine.Frame f,boolean dispatchActions) {
         dispatch=dispatchActions;frame=f;now=f.now;
+        updateLocalSupport(f);
         if(runEnded)return decision(0,0,0,false,"Run finished; preserve its map for export");
         if(f.playerConfidence<PLAYER_MIN||!valid(f.playerX,f.playerY)) {
             previousCommand=false;if(uncertainSince<0)uncertainSince=now;
@@ -155,8 +173,9 @@ public final class MapNavigator {
             if(validTerrain(f))integrateTerrain(f);
             fillPlayerMask(f);buildBorders();updateMotionAndJumps(f);updateTracks(f);updateCeilingCoverage();recordPath();
         } else updateGroundEvidence(f);
-        if(f.remainingEnemies>=0&&f.remainingEnemiesConfidence>=.55) {
-            remainingEnemies=f.remainingEnemies;countAt=f.capturedAt;countSector=activeSector;
+        long hudAt=f.remainingEnemiesCapturedAt>=0?f.remainingEnemiesCapturedAt:f.capturedAt;
+        if(f.remainingEnemies>=0&&f.remainingEnemiesConfidence>=.55&&now-hudAt<=2000) {
+            remainingEnemies=f.remainingEnemies;countAt=f.remainingEnemiesCapturedAt>=0?f.remainingEnemiesCapturedAt:f.capturedAt;countSector=activeSector;
             sectorCleared=remainingEnemies==0;if(sectorCleared)resolveOrdinary();
         }
         if(f.completedSector>completedSector) {
@@ -166,6 +185,10 @@ public final class MapNavigator {
         if(countSector!=activeSector||f.capturedAt-countAt>2000){remainingEnemies=-1;sectorCleared=false;}
         if(anchored&&f.gate&&validCoordinate(f.gateX)){gateX=f.gateX+cameraX;gateAt=now;}
         if(tiles.size()>MAX_CELLS)return decision(0,0,0,true,"Atlas size limit reached; preserve this partial map");
+        if(localTurnPending&&controlGrounded&&localWall(corridorDirection)&&localPassage(-corridorDirection)){
+            corridorDirection=-corridorDirection;corridor++;corridorTravelMs=0;corridorStartX=px;
+            emptySweeps=0;localTurnPending=false;orientationPending=false;
+        }
         if(!anchored)return unregisteredPass();
         if(entered&&phase.equals("ENTER"))phase="GROUND_SWEEP";
         double[] support=supportFloor();
@@ -185,7 +208,7 @@ public final class MapNavigator {
         Track earlyReturning=track(returnTrack);
         if(earlyReturning!=null){Decision revisit=returnToEnemy(earlyReturning);if(revisit!=null)return revisit;}
         if(phase.equals("RETURN_GROUND")) {
-            if(f.grounded&&Math.abs(px-returnX)<.13){phase="GROUND_SWEEP";returnX=Double.NaN;}
+            if(controlGrounded&&Math.abs(px-returnX)<.13){phase="GROUND_SWEEP";returnX=Double.NaN;}
             else {int side=Double.isFinite(returnX)&&Math.abs(px-returnX)>.07?(returnX>px?1:-1):0;
                 return act(wallContact(side)?0:side,0,350,"Return from the high-roof scout to the ground sweep; no extra jump");}
         }
@@ -383,9 +406,14 @@ public final class MapNavigator {
         previousX=px;previousY=py;previousAt=measuredAt;
     }
     private void updateGroundEvidence(FarmEngine.Frame f) {
-        if(f.grounded) {
+        if(controlGrounded) {
             groundedFrames++;airFrames=0;
             if(groundedFrames>=2&&sawAir){usedJumps=0;sawAir=false;}
+            // A jump tapped during the entry animation can be ignored by the
+            // game. A charge is not permanently spent if we never left support.
+            if(usedJumps>0&&groundedFrames>=2&&now-lastJump>=normalFlightMs()){
+                usedJumps=0;sawAir=false;learningJump=false;
+            }
             // Independent support geometry plus a genuine airborne phase allows
             // immediate repeat jumping without imposing a second stationary frame.
             if(sawAir&&frame==f){double[] floor=supportFloor();if(floor!=null&&Math.abs(floor[1]-py-bodyHalfH())<.035){usedJumps=0;sawAir=false;}}
@@ -532,11 +560,11 @@ public final class MapNavigator {
         int side=Math.abs(dropX-px)>.035?(dropX>px?1:-1):0;
         goal=new Goal(dropX,py+.2,"observed downward passage",-1);
         if(wallContact(side))side=0;
-        if(now-dropAt>6500&&!frame.grounded)return decision(0,0,0,true,"Observed opening made no landing progress; inspect the corridor");
+        if(now-dropAt>6500&&!controlGrounded)return decision(0,0,0,true,"Observed opening made no landing progress; inspect the corridor");
         return act(side,0,350,"Follow the real floor opening downward; commit the next direction after landing");
     }
     private void commitObservedDrop(double[] floor) {
-        if(!frame.grounded||groundedFrames<2)return;
+        if(!controlGrounded||groundedFrames<2)return;
         if(orientationPending&&floor!=null){
             double[] forwardWall=wallAhead(corridorDirection);
             if(forwardWall!=null&&wallGap(forwardWall,corridorDirection)<.20&&freeBody(px-corridorDirection*.08,py)){
@@ -569,12 +597,12 @@ public final class MapNavigator {
         phase="RECOVERY";
         if(wall!=null) {
             double rise=py-bodyHalfH()-wall[1];
-            if(frame.grounded&&rise>-.015&&rise<jumpRise*.8&&usedJumps==0&&roofGap()>.095&&failedEscapes==0) {
+            if(controlGrounded&&rise>-.015&&rise<jumpRise*.8&&usedJumps==0&&roofGap()>.095&&failedEscapes==0) {
                 if(dispatch)failedEscapes++;return act(corridorDirection,1,280,"Verified low ledge: try its ground-jump primitive once");
             }
             releaseUntil=now+350;return act(0,0,350,"Rectangular corridor wall: release and look for actual downward continuation");
         }
-        if(frame.grounded&&groundJumpReady()&&failedEscapes==0){if(dispatch)failedEscapes++;return act(corridorDirection,1,280,"Failed move without a wall: one ground-jump probe in the committed direction");}
+        if(controlGrounded&&groundJumpReady()&&failedEscapes==0){if(dispatch)failedEscapes++;return act(corridorDirection,1,280,"Failed move without a wall: one ground-jump probe in the committed direction");}
         if(dispatch)failedEscapes++;releaseUntil=now+350;
         return act(0,0,350,"Failed movement primitive: coast and reobserve instead of flipping direction");
     }
@@ -594,8 +622,8 @@ public final class MapNavigator {
         return total>=4&&free>=Math.ceil(total*.75);
     }
     private void finishScout(){scoutDone=true;highRoofPending=false;returnX=Double.isFinite(scoutX)?scoutX:px;phase="RETURN_GROUND";}
-    private boolean groundJumpReady(){return frame.grounded&&usedJumps==0&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&jumpFits(corridorDirection)&&!wallContact(corridorDirection);}
-    private boolean measuredAirPulse(){return usedJumps<jumpBudget()&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&!frame.ceilingReached&&jumpFits(corridorDirection)&&(frame.grounded&&usedJumps==0||velocityY>=-.10);}
+    private boolean groundJumpReady(){return controlGrounded&&usedJumps==0&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&jumpFits(corridorDirection)&&!wallContact(corridorDirection);}
+    private boolean measuredAirPulse(){return usedJumps<jumpBudget()&&now-lastJump>=Math.max(250,config.jumpSpacingMs)&&!frame.ceilingReached&&jumpFits(corridorDirection)&&(controlGrounded?usedJumps==0:velocityY>=-.10);}
     /** A short ballistic primitive, checked as a swept body rather than an air-grid path. */
     private boolean jumpFits(int side){
         if(roofGap()<jumpRise+.035)return false;
@@ -636,7 +664,7 @@ public final class MapNavigator {
         if(wallContact(side)){t.deferredUntil=now+2500;returnTrack=-1;phase="GROUND_SWEEP";return null;}
         if(dispatch&&blockedSince>=returnAt&&now-blockedSince>3000)
             return decision(0,0,0,true,"Named enemy return made no horizontal progress; preserve the map and inspect the passage");
-        int pulse=frame.grounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
+        int pulse=controlGrounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
         if(t.ceilingCandidate&&t.y<py-.13&&measuredAirPulse())pulse=1;
         return act(side,pulse,normalDuration(),pulse>0?"Named enemy return: ground jump through its body":"Named enemy return: descend/coast to its stored ground position");
     }
@@ -651,16 +679,123 @@ public final class MapNavigator {
         }
         if(dispatch&&blockedSince>=remainingSweepAt&&now-blockedSince>3000)
             return decision(0,0,0,true,"Remaining-enemy return made no progress; do not count a partial sweep as complete");
-        int jump=frame.grounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
+        int jump=controlGrounded&&usedJumps==0&&jumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
         return act(side,jump,normalDuration(),"Enemy counter is positive: jump-move back through the observed corridor to find missed bots");
     }
     private void resolveOrdinary(){for(int i=tracks.size()-1;i>=0;i--)if(!tracks.get(i).ceilingCandidate&&tracks.get(i).sector<=activeSector&&(runEnded||!tracks.get(i).matched))retireTrack(i);}
     private void markContact(Track t){if(t.touchedAt<0||now-t.touchedAt>=BURN_GRACE_MS){t.touchedAt=now;t.missingFrames=0;t.absentSince=-1;}}
     private Decision unregisteredPass() {
-        if(cameraGapAt>=0&&now-cameraGapAt>8000)return decision(0,0,0,true,"Camera registration did not recover; saved map remains partial");
-        if(wallContact(corridorDirection)||frame.ceilingReached)return act(0,0,350,"Unregistered contact: release movement and preserve the corridor direction");
-        if(frame.grounded&&localFree(frame.playerX+corridorDirection*.06,frame.playerY))return act(corridorDirection,0,180,"Camera registration uncertain: short grounded probe in the corridor direction; atlas frozen");
-        return act(0,0,350,"Unregistered airborne view: fall naturally while the camera recovers; atlas frozen");
+        int side=phase.equals("REMAINING_ENEMY_SWEEP")?-corridorDirection:corridorDirection;
+        if(phase.equals("REMAINING_ENEMY_SWEEP")&&(remainingEnemies==0||corridorTravelMs<80||localWall(side))){
+            phase="GROUND_SWEEP";remainingSweepAt=-1;emptySweeps++;side=corridorDirection;
+        }
+        if(phase.equals("DROP_TO_CORRIDOR")){
+            if(!frame.groundContactCandidate&&!frame.grounded)localDropSeen=true;
+            if(localDropSeen&&controlGrounded){
+                localTurnPending=true;
+                corridorFloor=Double.NaN;lastTurn=now;pendingDrop=localDropSeen=false;dropX=Double.NaN;scoutDone=false;phase="GROUND_SWEEP";
+                side=corridorDirection;
+            }else if(controlGrounded&&dropAt>=0&&now-dropAt>1800){
+                pendingDrop=false;dropX=Double.NaN;phase="GROUND_SWEEP";
+            }else return act(localWall(side)?0:side,0,350,"Follow the visible opening and fall; choose the next direction after landing");
+        }
+        if(localTurnPending&&controlGrounded&&localWall(corridorDirection)&&localPassage(-corridorDirection)){
+            corridorDirection=-corridorDirection;corridor++;corridorTravelMs=0;corridorStartX=px;
+            emptySweeps=0;localTurnPending=false;orientationPending=false;side=corridorDirection;
+        }
+        if(entered&&remainingEnemies>0&&(localWall(side)||frame.gate&&validCoordinate(frame.gateX)&&Math.abs(frame.gateX-frame.playerX)<.22)&&!phase.equals("SCOUT_HIGH_CEILING")&&!phase.equals("REMAINING_ENEMY_SWEEP")){
+            phase="REMAINING_ENEMY_SWEEP";remainingSweepAt=now;side=-corridorDirection;
+        }
+        Track returning=track(returnTrack);
+        if(returning!=null&&phase.equals("REVISIT_ENEMY")){
+            side=lastDirection;
+            if(localEnemyContact()||localWall(side)||now>returnDeadline){
+                if(localEnemyContact())markContact(returning);
+                returning.deferredUntil=now+BURN_GRACE_MS;returnTrack=-1;phase="GROUND_SWEEP";side=corridorDirection;
+            }
+        }
+        if(phase.equals("RETURN_GROUND")){
+            int back=Double.isFinite(localScoutTravel)&&corridorTravelMs-localScoutTravel>120?-corridorDirection:0;
+            if(controlGrounded&&(back==0||localWall(back))){phase="GROUND_SWEEP";returnX=Double.NaN;}
+            else return act(localWall(back)?0:back,0,350,"High-roof scout: descend back over the ground passed during the climb");
+        }
+        if(localWall(side)) {
+            if(localDriveAt<0)localDriveAt=now;
+            // A low ledge can be jumped. A tall enclosing wall cannot.
+            if(controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=normalFlightMs())
+                return act(side,1,350,"Visible low obstruction: jump forward using local clearance");
+            if(localOpening(-side)){phase="DROP_TO_CORRIDOR";pendingDrop=true;localDropSeen=false;dropAt=now;return act(-side,0,250,"Enclosing wall with a visible drop behind: step into the lower passage");}
+            return act(0,0,350,"Visible wall: release horizontal input and observe its opening");
+        }
+        localDriveAt=-1;
+        if(frame.ceilingReached||localRoofGap()<.055){if(phase.equals("SCOUT_HIGH_CEILING"))finishScout();return act(side,0,350,"Visible roof: move along the cavern without another upward pulse");}
+        if(phase.equals("SCOUT_HIGH_CEILING")){
+            if(localRoofVisible()||usedJumps>=jumpBudget()){finishScout();return act(side,0,350,"Roof revealed or ascent charges spent: descend to the ground sweep");}
+            int pulse=(!controlGrounded||usedJumps==0)&&now-lastJump>=Math.max(config.jumpSpacingMs,normalFlightMs()/2)&&localJumpFits(side)?1:0;
+            return act(side,pulse,350,"Scout the hidden high roof with one separate Hookshot; map alignment is optional");
+        }
+        if(!entered&&corridorTravelMs>=900)entered=true;
+        if(scoutDone&&Double.isFinite(localScoutTravel)&&Math.abs(corridorTravelMs-localScoutTravel)>1800){scoutDone=false;localScoutTravel=Double.NaN;}
+        if(controlGrounded&&localOpening(side)&&!phase.equals("REMAINING_ENEMY_SWEEP")){
+            phase="DROP_TO_CORRIDOR";pendingDrop=true;localDropSeen=false;dropAt=now;return act(side,0,350,"Visible floor ends ahead: step through the opening without another jump");
+        }
+        if(entered&&!controlGrounded&&sawAir&&roofStillOutsideView()&&!scoutDone&&now-lastJump>=normalFlightMs()/2){
+            scoutX=px;localScoutTravel=corridorTravelMs;phase="SCOUT_HIGH_CEILING";
+            return act(side,localJumpFits(side)&&usedJumps<jumpBudget()?1:0,350,"Normal traversal has not revealed the upper roof: use one Hookshot");
+        }
+        int pulse=controlGrounded&&usedJumps==0&&localJumpFits(side)&&now-lastJump>=Math.max(250,config.jumpSpacingMs)?1:0;
+        return act(side,pulse,normalDuration(),pulse>0?"Jump-move through the cavern using visible support; keep mapping in the background":"Continue the cavern sweep while the map realigns");
+    }
+    private void updateLocalSupport(FarmEngine.Frame f){
+        if(lastControlAt>=0&&f.capturedAt>lastControlAt&&previousCommand)
+            corridorTravelMs=Math.max(0,corridorTravelMs+Math.min(normalDuration(),f.capturedAt-lastControlAt)*lastDirection*corridorDirection);
+        lastControlAt=f.capturedAt;
+        double foot=validCoordinate(f.playerBottom)?f.playerBottom:f.playerY+.035;
+        boolean fresh=f.capturedAt>localSupportAt;
+        if(fresh){
+            boolean stable=Double.isFinite(previousFoot)&&Math.abs(foot-previousFoot)<.018&&f.capturedAt-localSupportAt<=1400;
+            localSupportViews=f.groundContactCandidate&&f.playerConfidence>=.5?(stable?localSupportViews+1:1):0;
+            previousFoot=foot;localSupportAt=f.capturedAt;
+        }
+        controlGrounded=f.grounded||(localSupportViews>=2&&now-lastJump>=normalFlightMs());
+    }
+    private long normalFlightMs(){return Math.max(600,Math.min(1300,(long)(2000*Math.sqrt(2*gravity*jumpRise)/gravity)));}
+    private boolean localWall(int side){
+        if(side>0&&frame.wallRight||side<0&&frame.wallLeft)return true;
+        double edge=side>0?frame.playerRight:frame.playerLeft;if(!validCoordinate(edge))edge=frame.playerX+side*.03;
+        int hits=0;for(double yy=frame.playerTop+.018;yy<frame.playerBottom-.012;yy+=.02)if(localSolid(edge+side*.018,yy))hits++;
+        return hits>=3;
+    }
+    private double localRoofGap(){
+        double top=validCoordinate(frame.playerTop)?frame.playerTop:frame.playerY-.035;
+        for(double yy=top-.018;yy>.16;yy-=1./ROWS)for(double xx:new double[]{frame.playerX-.025,frame.playerX,frame.playerX+.025})if(localSolid(xx,yy))return top-yy;
+        return Double.POSITIVE_INFINITY;
+    }
+    private boolean localRoofVisible(){return Double.isFinite(localRoofGap());}
+    private boolean localPassage(int side){
+        int free=0;for(double dx:new double[]{.07,.10,.13})for(double dy:new double[]{-.02,.02})if(localFree(frame.playerX+side*dx,frame.playerY+dy))free++;
+        return !localWall(side)&&free>=4;
+    }
+    private boolean localJumpFits(int side){
+        if(frame.ceilingReached||localRoofGap()<jumpRise+.025)return false;
+        // A tall wall at the body's upper half is not a jumpable ledge.
+        double edge=(validCoordinate(frame.playerRight)&&side>0?frame.playerRight:validCoordinate(frame.playerLeft)&&side<0?frame.playerLeft:frame.playerX+side*.03)+side*.018;
+        return !localSolid(edge,frame.playerY-bodyHalfH()*.6)&&!localSolid(frame.playerX,frame.playerY-jumpRise);
+    }
+    private boolean localOpening(int side){
+        if(!validTerrain(frame))return false;
+        double foot=validCoordinate(frame.playerBottom)?frame.playerBottom:frame.playerY+.035;
+        for(double distance:new double[]{.08,.12,.16}){
+            double xx=frame.playerX+side*distance;int free=0;
+            for(double dx:new double[]{-.015,.015})for(double dy:new double[]{.045,.08,.115})if(localFree(xx+dx,foot+dy))free++;
+            if(free>=5&&!localSolid(xx,foot+.018)&&!localSolid(xx,foot+.04))return true;
+        }
+        return false;
+    }
+    private boolean localEnemyContact(){
+        if(frame.enemyBoxes==null)return false;
+        for(double[] b:frame.enemyBoxes)if(b.length>=4&&b[0]<=frame.playerRight&&b[2]>=frame.playerLeft&&b[1]<=frame.playerBottom&&b[3]>=frame.playerTop)return true;
+        return false;
     }
     private Decision act(int dir,int pulse,long duration,String text){if(dispatch&&pulse>0)recordJump(registered);return remember(decision(dir,pulse,duration,false,text));}
     private long normalDuration(){return Math.max(150,Math.min(350,config.moveMs));}
@@ -695,7 +830,15 @@ public final class MapNavigator {
         learningJump=learn&&now-frame.capturedAt<=300&&!frame.ceilingReached;
         jumpOriginY=jumpMinimumY=py;jumpObservedAfter=now;
     }
-    private Decision decision(int dir,int jumps,long ms,boolean pause,String text){reason=text;return new Decision(dir,jumps,ms,pause,text);}
+    private Decision decision(int dir,int jumps,long ms,boolean pause,String text){
+        reason=text;
+        if(dispatch&&frame!=null){
+            if(controlRows.size()>=1200){controlRows.remove(0);controlReasons.remove(0);}
+            controlRows.add(new double[]{frame.capturedAt,now,frame.playerX,frame.playerY,frame.playerConfidence,frame.grounded?1:0,frame.groundContactCandidate?1:0,controlGrounded?1:0,frame.cameraConfidence,dir,jumps,usedJumps,corridorDirection,frame.wallLeft?1:0,frame.wallRight?1:0,frame.ceilingReached?1:0});
+            controlReasons.add(text);
+        }
+        return new Decision(dir,jumps,ms,pause,text);
+    }
     private int jumpBudget(){return Math.max(1,Math.min(21,config.jumpBudget));}
     private static boolean validTerrain(FarmEngine.Frame f){return f!=null&&f.terrainCols>0&&f.terrainRows>0&&f.terrainCols<=96&&f.terrainRows<=48&&f.terrainCells!=null&&f.terrainCells.length==f.terrainCols*f.terrainRows;}
     private static boolean validCoordinate(double v){return Double.isFinite(v)&&v>=0&&v<=1;}

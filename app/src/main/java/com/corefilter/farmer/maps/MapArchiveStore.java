@@ -84,6 +84,8 @@ public final class MapArchiveStore {
                 .put("enemies","[x,y,burnAttempt:0/1,lastSeenMs,optional section]; a contact is not a confirmed kill")
                 .put("enemyHistory","[id,x,y,section,firstSeenMs,lastSeenMs,touchedAtMs,clearedAtMs,confidence]; null or negative timestamps mean unconfirmed"));
         root.put("cells",rows(s.cells,MAX_CELLS)).put("borders",rows(s.borders,MAX_BORDERS)).put("path",rows(s.path,MAX_PATH)).put("coverage",rows(s.coverage,MAX_COVERAGE)).put("enemies",rows(s.enemies,MAX_ENEMIES));
+        root.put("controlTrace",rows(s.controlTrace,1200)).put("controlReasons",new JSONArray(Arrays.asList(s.controlReasons)));
+        root.getJSONObject("fields").put("controlTrace","[capturedAtMs,processedAtMs,screenPlayerX,screenPlayerY,playerConfidence,strongGround,footCandidate,controlGround,cameraConfidence,direction,jumps,usedJumps,corridorDirection,wallLeft,wallRight,ceilingContact]; controlReasons has the corresponding decision text");
         double[][] history=history(s);root.put("enemyHistory",rows(history,MAX_HISTORY));
         root.put("retention",new JSONObject().put("cells",arrayInfo(s.cells,MAX_CELLS)).put("borders",arrayInfo(s.borders,MAX_BORDERS)).put("path",arrayInfo(s.path,MAX_PATH)).put("coverage",arrayInfo(s.coverage,MAX_COVERAGE)).put("enemies",arrayInfo(s.enemies,MAX_ENEMIES)).put("enemyHistory",arrayInfo(history,MAX_HISTORY)));
         JSONArray incomplete=new JSONArray();if(!s.complete)incomplete.put("Navigator did not verify complete observed coverage");if(s.inspectedCeilings<s.ceilingSections)incomplete.put("Some observed ceiling sections remain uninspected");

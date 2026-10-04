@@ -32,11 +32,12 @@ public final class FarmEngine {
         public List<Token> tokens = Collections.emptyList();
         public boolean captureOk = true, gameplay, gate, filterLoot, filterOffer;
         public boolean observedAd, endScreen, crateScreen, targetSelected, uncertainFilterOffer;
-        public boolean grounded, ceilingReached, playButton, selectedPanel;
+        public boolean grounded, groundContactCandidate, ceilingReached, playButton, selectedPanel;
         public double playerConfidence, playX = -1, playY = -1;
         public int terrainCols, terrainRows, registrationEpoch, completedSector;
         /** Fresh HUD reading. Unknown is -1; zero applies to ordinary sector enemies only. */
         public int remainingEnemies = -1;
+        public long remainingEnemiesCapturedAt = -1;
         public double remainingEnemiesConfidence;
         /** Normalized x/y units require this aspect ratio for faithful map rendering. */
         public double viewportAspectRatio = Double.NaN;
@@ -150,7 +151,16 @@ public final class FarmEngine {
     public synchronized int completedRuns() { return runs(); }
     public synchronized int adsWatched() { return (int) Math.min(Integer.MAX_VALUE, adsWatched); }
     public synchronized int deaths() { return (int) Math.min(Integer.MAX_VALUE, deaths); }
-    public synchronized void stop() { state = State.STOPPED; status = "Stopped"; busyUntil = 0; }
+    public synchronized void stop() {
+        if(inRun&&!resultCounted){
+            navigator.finish(false);
+            MapNavigator.Snapshot snapshot=navigator.snapshot();
+            if(snapshot.mapCells>0||snapshot.controlTrace.length>0)
+                finishedMaps.addLast(new RunMap(snapshot,"interrupted",completedRuns+deaths+1,Math.max(0,lastNow)));
+            resultCounted=true;inRun=false;
+        }
+        state = State.STOPPED; status = "Stopped"; busyUntil = 0;
+    }
 
     public synchronized void reset(long now) {
         state = State.IDLE; status = "Ready"; sessionStart = now; runStart = -1;

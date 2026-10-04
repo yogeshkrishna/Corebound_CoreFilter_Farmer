@@ -41,7 +41,7 @@ public class MapNavigatorTest {
         MapNavigator.Decision local=n.next(occluded);MapNavigator.Snapshot after=n.snapshot();
         assertEquals(before.mapCells,after.mapCells);assertEquals(1,after.unresolvedEnemies);
         assertEquals(before.enemies[0][0],after.enemies[0][0],.001);
-        assertEquals(before.cameraX,after.cameraX,.001);assertTrue(local.reason.contains("atlas frozen"));
+        assertEquals(before.cameraX,after.cameraX,.001);assertEquals(1,local.direction);assertFalse(local.pause);
     }
 
     @Test public void jumpsAreSinglePulsesSeparatedByObservedFramesAndLimitedToSeven() {
@@ -63,13 +63,14 @@ public class MapNavigatorTest {
         assertTrue(n.snapshot().remainingJumps>=1);
     }
 
-    @Test public void repeatingGroundFlagsWithoutAirtimeCannotInventHookshots() {
+    @Test public void ignoredGroundJumpRetriesDoNotConsumeTheAirHookshotBudget() {
         MapNavigator n=nav();int pulses=0;
         for(int i=0;i<18;i++) {
-            Frame f=room(i*500);f.grounded=true;f.cameraX=i*.012;
-            pulses+=n.next(enemy(f,.76-f.cameraX,.25)).jumps;
+            Frame f=room(i*500);f.grounded=true;f.cameraX=i*.04;
+            pulses+=n.next(f).jumps;
         }
-        assertTrue(pulses>0&&pulses<=7);assertEquals(7-pulses,n.snapshot().remainingJumps);
+        assertTrue("A rejected base jump must be retried",pulses>1);
+        assertTrue("Grounded retries leave the six airborne charges available",n.snapshot().remainingJumps>=6);
     }
 
     @Test public void aSingleRoofContactStopsJumpingImmediatelyAndRetreatsFromCorner() {
@@ -210,12 +211,16 @@ public class MapNavigatorTest {
         assertEquals(1,ceiling.snapshot().unresolvedEnemies);
     }
 
-    @Test public void registrationFailureAllowsOnlyBoundedGroundedProbes() {
+    @Test public void registrationFailureDoesNotDisableFreshLocalGroundMovement() {
         MapNavigator n=nav();n.next(room(0));
         Frame f=room(350);f.cameraConfidence=.1;f.grounded=true;
-        MapNavigator.Decision probe=n.next(f);assertTrue(probe.reason.contains("grounded probe"));assertEquals(0,probe.jumps);
+        for(int x=1;x<47;x++)f.terrainCells[16*48+x]=2;
+        MapNavigator.Decision probe=n.next(f);assertEquals(1,probe.direction);assertFalse(probe.pause);
         int cells=n.snapshot().mapCells;f=room(9000);f.cameraConfidence=.1;f.grounded=true;
-        MapNavigator.Decision stop=n.next(f);assertTrue(stop.pause);assertEquals(cells,n.snapshot().mapCells);
+        for(int x=1;x<47;x++)f.terrainCells[16*48+x]=2;
+        MapNavigator.Decision keepMoving=n.next(f);assertFalse(keepMoving.pause);assertEquals(1,keepMoving.direction);
+        assertEquals(1,keepMoving.jumps);
+        assertEquals(cells,n.snapshot().mapCells);
     }
 
     @Test public void controlMaskIsNotAnUnexploredRoomFrontierThatPullsTheFarmerLeft() {
