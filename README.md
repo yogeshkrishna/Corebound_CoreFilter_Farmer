@@ -1,74 +1,37 @@
 # Ceiling Scout
 
-A personal Android farmer for **Corebound → Lost Scrapyard → Frozen ★5**, using the supplied Gilded Ember build. It reads the game on your phone, sends movement and jump taps, checks ceilings, pursues visible missed enemies, and repeats runs. It watches a reward ad when the displayed offer contains a recognized core filter.
+Android farmer and live laptop mapper for **Corebound → Lost Scrapyard → Frozen ★5**.
 
-**[Download the latest APK](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** · Android 11 or later
+**[Download the latest release](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** — `Ceiling-Scout.apk` for Android 11+, `Ceiling-Scout-Studio.zip` for the laptop.
 
-Version 0.4.7 fixes capture-driven overlay flashing, gives enemy return sweeps priority over roof scouting, remeasures downward gaps at each shaft ledge, and moves Wi-Fi sharing into a background service with a saved link. Gameplay navigation no longer waits for periodic text recognition.
+## Live mapping in 0.5.0
 
-A temporary **Map while I play** mode alongside the farmer. The mapper sends no automated touches: you play, scout ceilings and handle menus/ads. It saves the observed union map and sampled clean gameplay images with their poses. Press **Save** to keep a partial run; a recognized end screen saves a finished run automatically. Interrupted image recordings are recovered when controls reconnect. Farmer fixes let a drop leave its old waypoint through an observed lower passage, step past a platform edge wrongly classified as a wall, and align under a visible shaft beside a roof ledge. The overlay retains Run/Pause or Record/Save, Build, Calibrate and Stop; preview, capture settings and laptop transfer live in the app.
+The phone-side mapper, saved-map queue, preview overlay and ZIP sharing server have been removed. The phone sends **native-resolution lossless PNGs directly to your paired laptop** using Android screen sharing. Ceiling Scout Studio saves the originals and reconstructs a map concurrently. Farming remains a separate choice.
 
-## Install this update
+1. On the laptop, extract `Ceiling-Scout-Studio.zip` and open **Start Studio.cmd**. First launch installs image tools. Python 3.12+ is required; this developer laptop can use its bundled Python.
+2. Update the phone through **Check for updates → Download & install**, then confirm Android's installer. Install over the old app to retain your build and calibration.
+3. Connect both devices to the same Wi-Fi. Choose **Live laptop map → Connect laptop** on the phone and paste Studio's link, or scan its QR with your phone camera.
+4. Press **Start live capture**, accept Android's screen-sharing prompt, then play Corebound manually. Cover the floor, high roofs, shafts and turns. You handle enemies, rewards and ads.
+5. Watch the map on the laptop. Pan/zoom, select separate sections when tracking is lost, and export **native PNG** or **map data**. **Stop** on the floating bar ends capture.
 
-1. In your existing app use **Check for updates → Download & install**, then confirm **Install**. For a first installation, download **Ceiling-Scout.apk** from the latest release and open it with Android's Package Installer. **Do not uninstall first:** your build and calibration will stay saved.
-2. Open Ceiling Scout. If controls are disconnected, use **Enable controls** and enable **Ceiling Scout controls** in Accessibility settings. For a sideloaded app Android may first require **App info → menu → Allow restricted settings**; wording varies by phone.
-3. Tap **Show floating bar**, then **Open Corebound**. Select Lost Scrapyard with Frozen ★5. Starting inside gameplay assumes you selected that level yourself.
-4. The small bar has **Run/Pause** (or **Record/Save** for manual mapping) and **•••**. Its menu contains Build, Calibrate and Stop & hide. Preview, capture settings and map transfer are in the app.
-5. If needed, enter gameplay and choose **••• → Calibrate controls**. Tap the left button, right button, then jump area on the frozen image. These taps do not touch the game. Saved calibration turns off automatic movement-button location.
-6. Press **Run** and supervise the first runs. Use **Edit build & farming settings** when your equipment changes.
+The link uses a persistent key and fixed port, so app switches do not replace it. A changed Wi-Fi IP requires the newly displayed link. The laptop app must stay running. Original PNGs, capture time, device/orientation, masks, skipped upload count, checksums and registration results stay under **Documents\Ceiling Scout Live**. Earlier archives are never imported. The update removes obsolete private phone recordings on first launch; it does not delete laptop folders.
 
-The default is **three Magmatic ★7+ Hookshots: one base jump plus six extra jumps**. Hookshot count and any other extra jumps are editable. The app issues one press/release jump at a time, checks motion and overhead clearance before another impulse, and refills the budget after confirmed landing. The minimum jump interval defaults to 350 ms; actual impulses depend on fresh observations and trajectory clearance. Build notes and calibration remain saved.
+Capture targets at most eight frames/second and skips frames while an upload is busy. Actual throughput depends on encoding and Wi-Fi. Other apps and portrait frames are skipped. Game menus/ads remain original evidence; reconstruction requires visible movement pads. The bar stays visible and is masked. Unknown areas stay transparent.
 
-## Updates from the phone
+Reconstruction applies translation only. Registration may analyze a smaller image, but map tiles and exports retain the native pixel scale. Conflicting or weak matches are rejected; unlinked sections are **not** combined at guessed positions. Native scale does not guarantee full coverage or perfect registration. See [Studio setup and limits](laptop/README.md) and [capture protocol](docs/live-mapping.md).
 
-In Ceiling Scout use **Check for updates → Download & install**. On the first update, Android may ask you to allow installation from Ceiling Scout. Then confirm **Install** in Android's installer. You do not need to email each new APK to yourself.
+## Farming
 
-Checks are manual. New builds must be published to GitHub Releases before the button can find them. Only a newer stable release is offered. The app checks its download hash, app identity, version code, and original signing certificate before installation. The configured public repository is editable. See [update and release instructions](docs/updates.md).
+Choose **Use farmer**, select Lost Scrapyard with Frozen ★5 in Corebound, then press **Run**. Enable **Ceiling Scout controls** in Android Accessibility if needed. Sideloaded apps may require **App info → menu → Allow restricted settings** first. The bar has Run/Pause and **•••**, with Build, Calibrate and Stop & hide in its menu. Drag the status text to move it.
 
-If updating from 0.2.0 after the repository rename, choose **Update source**, enter `yogeshkrishna/Corebound_CoreFilter_Farmer`, then **Save & check**. Version 0.3.0 keeps the current source automatically.
+The farmer jump-moves through visible corridors, uses air jumps for hidden roofs, attempts Ember contacts, revisits unresolved enemies, handles observed drops/turns, and repeats recognized runs. Core-filter reward ads are watched when the displayed offer is recognized. Countdown/close/end-card handling and bounded Play Store recovery are separate. Unknown screens can need manual intervention.
 
-## Farming and floating controls
+The supplied build has **three Magmatic ★7+ Hookshots: seven jumps**. Edit equipment and timings through **Edit build & farming settings**. Notes do not calculate damage. Calibrate once if automatic control location is wrong. Laptop maps are not yet used to steer farming. See [controller details](docs/navigation.md).
 
-- **Run/Pause:** farming continues until stopped by default. Pause prevents new touches; an already issued batch releases within 700 ms.
-- **••• → Build & Hookshots:** pauses farming and opens equipment notes, jump count, tap spacing, movement duration, contact time, run watchdog, and ad preference.
-- **Calibrate controls:** saves the movement and jump touch positions.
-- **Screen tools in the app:** preview freezes the captured game image without stretching its proportions. Compatibility capture leaves the bar visible and masks its occupied rectangle from OCR, enemies, terrain and camera registration. Covered terrain remains unknown. During an ad the bar moves away from close-button corners and returns afterward. Optional window capture accepts only native-size buffers and falls back to display capture on mismatched geometry. Frames captured across rotation or a foreground change are discarded before analysis.
-- **Stop & hide:** stops farming and removes the bar. Reopen it from the home screen. Drag its status text to move it.
+## Updates and development
 
-The navigator enters the corridor before selecting backward targets, jump-moves through visible areas, and uses additional height only for hidden roofs. Ceiling inspection is based on a clear view of its underside rather than proximity. Downward passages and real enclosing walls establish corridor turns; screen edges do not. Ember contact starts a burn attempt, with unresolved targets retained for a deliberate return sweep. A readable remaining-enemy count helps direct that sweep; a visible gate does not start an animation wait. See [controller details](docs/navigation.md).
+Use **Check for updates → Download & install**. Android still requires installation confirmation. The app verifies checksum, identity, version and original signing certificate. See [release instructions](docs/updates.md).
 
-## Saved maps on your laptop
+`tools\setup-toolchain.ps1` prepares the Android toolchain; `tools\build.ps1` builds the APK and runs Android/recorded-vision/navigation checks. Install `laptop/requirements.txt`, then run `python -m unittest discover -s laptop/tests -v` for Studio. `python laptop/package.py --output dist/Ceiling-Scout-Studio.zip` packages laptop source without keys or recordings.
 
-This update temporarily offers **Map while I play** and **Use farmer** in the app. For manual mapping, select **Map while I play**, open Corebound, press **Record** on the bar, and play the route yourself, including high roofs and shafts. This mode sends no movement, jump, menu or ad touches. Handle rewards and Play yourself. Recognized run endings save automatically; **Save** also keeps an unfinished route. Switch to **Use farmer** to restore Run/Pause.
-
-Manual bundles additionally retain clean gameplay JPEGs and measured poses, sampled at least 700 ms apart, up to 900 images or 32 MiB per recording. Interrupted staged recordings are recovered when controls reconnect; their lost in-memory atlas stays marked unknown. The images provide evidence for later reconstruction when terrain recognition or camera alignment fails. This update does not automatically replay a human route.
-
-After runs, open **Saved maps & Wi-Fi transfer → Start Wi-Fi transfer** ; sharing continues when you close that page or open the game. Connect the laptop to the same Wi-Fi and open the displayed link. The laptop page provides a receiver for Windows and previews of saved maps. The receiver saves each ZIP, verifies its checksum, and acknowledges it before the app deletes that exact phone copy. Failed or interrupted transfers keep the phone files.
-
-Each ZIP contains **map.png** and **map.json**: observed floor, ceiling and wall boundaries, the traversed path, ceiling inspection, enemy observations, coordinate units, confidence, build settings and the latest 1,200 steering decisions. Pausing an active run also saves its partial record. Unknown areas remain blank. Camera gaps that cannot be linked appear in separate panels. These records support future investigation of a fixed layout pool; the current controller does not assume one or reuse an unverified layout. See [transfer steps](docs/map-export.md).
-
-Results are recognized before animation-speed taps. Continue and crate Close are followed by another verified Play on the selected target. A bare Play button cannot authorize a different level. Session/run-count caps are optional; per-run, capture, unknown-screen and stuck-recovery watchdogs remain active.
-
-The reward strip, rather than a presumed Spectrum kill or main loot, determines whether to watch the optional ad. Recognized ad countdowns are allowed to finish before Close/Skip/X; each following end card is checked again. If an observed ad opens Google Play, the app returns with bounded Back attempts. Unrecognized ad stages or ambiguous rare-filter offers can require manual handling.
-
-## Limits
-
-The map is built from partial screen observations; the app does not know the whole level at launch. It cannot guarantee every high corner or enemy is reached. Enemy appearance does not reliably establish Spectrum or Dreadnought identity, and contact alone cannot prove a completed burn. Camera registration loss, different hulls, HUD colours, heavily occluded players, and changed ad creatives can need further tuning. Equipment notes do not automatically calculate damage or route timing. A cleared run is recorded separately from verified map coverage.
-
-Recorded-frame checks validate recognition and decisions, not unattended farming success or live injected-input performance. See [current verification](docs/verification-0.4.7.md). Earlier [video findings](docs/video-analysis.md) and [research](docs/research.md) are retained as background.
-
-## Privacy
-
-OCR is bundled and runs on the phone. Farmer screenshots are processed in memory; manual mapping also saves bounded gameplay images in app-private storage. Maps, observations, build settings and a bounded decision log stay private. Maps and manual images are shared only through the local transfer you start; a verified receipt removes the transferred phone bundle. They are not uploaded to GitHub. Update requests and APK downloads use GitHub. Google's OCR SDK can also collect diagnostic device, app and performance metrics, as described in its [ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure). Installation uses Android's installer and its confirmation screen. No account login or GitHub token is stored in the Android app.
-
-## Build and publish
-
-JDK 17, Android SDK/build-tools 35, AGP 8.7.3 and Gradle 8.9 are pinned. On Windows, provision them with `tools/setup-toolchain.ps1` or use an existing installation, then:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
-```
-
-This assembles the debug APK, runs JUnit/Robolectric and Android lint, and checks the small recorded-frame corpus. The Gradle wrapper downloads the pinned distribution. GitHub Actions has a release workflow; [docs/updates.md](docs/updates.md) describes publishing and preserving the existing signing key.
-
-This is a debug-signed personal build. Keep the original key for all updates; a new certificate cannot update an existing installation. Private signing material and original videos are excluded from the repository. No Play Store publication is included.
+Tag releases verify Android, Studio and the original signer, then publish the APK, checksum and Studio ZIP. These checks validate specific capture, storage and reconstruction cases. Live capture and actual map coverage still need a phone trial; they do not establish error-free or unattended play.

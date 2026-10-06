@@ -1,0 +1,17 @@
+# Live capture and native mapping
+
+Android LiveCaptureService uses MediaProjection in a foreground service. Each session requires Android consent. On Android 14+ capture targets the default full display. Resize callbacks update the existing VirtualDisplay and ImageReader. RGBA row/pixel strides are decoded to native width/height, without rotation guesses or scaling. Landscape Corebound frames are sampled no faster than 125 ms; busy uploads skip new frames instead of queuing. The toolbar is masked and its rectangle is metadata. This mode runs no mapper, archive, OCR or touch policy on the phone.
+
+The saved pairing link is `http://PRIVATE_IPV4:8767/connect/CAPABILITY`. Android accepts only literal RFC1918 IPv4, valid ports and a 43-character key. DNS/public targets, credentials, query strings and redirects are rejected. The key is persistent in the laptop's private config and the port stays fixed. IP changes still require reconnecting. LAN HTTP is intended for trusted Wi-Fi, not internet exposure.
+
+`POST /api/frame` uses `Authorization: Bearer CAPABILITY`. The body is a big-endian unsigned 32-bit JSON length, UTF-8 metadata, then native PNG. Metadata includes session UUID, sequence, native dimensions, timestamps, display rotation, game package, device, Android/app version, masks, skipped uploads and service status. The laptop validates dimensions and decoded PNG, writes the original atomically with fsync, commits metadata/checksum to SQLite, then acknowledges. Same map/session/sequence and checksum is idempotent; conflicting reuse is rejected. Failures retry newly captured frames, without an offline phone archive.
+
+Storage and reconstruction run separately. The worker consumes saved files in order; backlog lives on disk, not in RAM. Restart resumes the latest new-system recording and rebuilds from originals. New map starts a new namespace. No old archive importer exists. Full frame evidence stays available for later mapper improvements.
+
+Reconstruction requires the movement pads. SIFT features exclude known UI rectangles, supplied masks and saturated moving effects. Robust affine estimation rejects scale/rotation; only median translation is applied. At least 14 agreeing matches, spatial spread, a minimum inlier ratio and no near-equal conflicting candidate are required. Recent/older anchors support reversals and recovery. Failed tracking makes disconnected sections rather than guessed placement.
+
+Analysis width is capped at 960; offsets are converted back to native pixels. Native 512-pixel RGBA tiles retain unknown alpha. Each pixel is copied unchanged from the best unobscured source observation; the compositor never brightens, averages or blends colours. Long orthogonal edges form observed borders, not verified collision geometry. PNG export never resizes; maps over 120 million pixels retain their native tiles rather than allocating a huge bitmap. Preview zoom affects presentation only.
+
+This collects evidence and estimates registration. It cannot recover unseen regions, establish the relative position of disconnected sections, identify every edge as floor/roof/wall, detect a fixed layout pool, or steer farming with laptop maps yet. Sparse/repetitive terrain, effects and decorative layers can defeat alignment. Actual throughput and coverage need a live phone trial.
+
+Primary Android reference: [Media projection](https://developer.android.com/media/grow/media-projection).

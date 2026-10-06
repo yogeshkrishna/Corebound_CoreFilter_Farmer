@@ -6,6 +6,9 @@ import android.content.res.ColorStateList;
 import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.os.Build;
+import android.media.projection.MediaProjectionManager;
+import android.media.projection.MediaProjectionConfig;
 import android.provider.Settings;
 import android.text.*;
 import android.view.*;
@@ -15,10 +18,12 @@ import android.widget.*;
 public final class MainActivity extends Activity {
     private TextView connection,buildSummary,modeSummary;
     private Button primary;
-    private MapExportUi mapExport;
+    private TextView liveSummary;
+    private static final int CAPTURE_PERMISSION=77;
 
     @Override public void onCreate(Bundle b){
         super.onCreate(b);
+        LegacyCaptureCleanup.start(this);
         getWindow().setStatusBarColor(Ui.BG);getWindow().setNavigationBarColor(Ui.BG);
         getWindow().setDecorFitsSystemWindows(false);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
@@ -28,7 +33,8 @@ public final class MainActivity extends Activity {
         super.onResume();refreshStatus();
         UpdateManager.onResume(this);
         if(getIntent().getBooleanExtra("editBuild",false)){getIntent().removeExtra("editBuild");editProfile();}
-        if(getIntent().getBooleanExtra("openMaps",false)){getIntent().removeExtra("openMaps");showSavedMaps();}
+        if(getIntent().getData()!=null){String link=getIntent().getData().getQueryParameter("link");getIntent().setData(null);if(link!=null)pairLaptop(link);}
+        if(getIntent().getBooleanExtra("startLive",false)){getIntent().removeExtra("startLive");startLive();}
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);}
 
@@ -49,25 +55,26 @@ public final class MainActivity extends Activity {
 
         LinearLayout setup=Ui.card(this);
         connection=Ui.text(this,"Controls not connected",15,Ui.AMBER);connection.setTypeface(null,Typeface.BOLD);setup.addView(connection);
-        setup.addView(Ui.text(this,"Open the game, then use Run or Record on the floating bar.",14,Ui.MUTED));
+        setup.addView(Ui.text(this,"Run farms the level. Stream sends your manual play to the laptop.",14,Ui.MUTED));
         primary=Ui.button(this,"Enable controls",()->{if(FarmerService.instance==null)enableControls();else FarmerService.instance.showOverlay();});primary.setTag("connect-controls");setup.addView(primary);
         Button open=Ui.secondaryButton(this,"Open Corebound",this::openGame);open.setTag("open-game");setup.addView(open);main.addView(setup);
 
-        LinearLayout modes=Ui.card(this);Ui.title(modes,"For this mapping update");
+        LinearLayout modes=Ui.card(this);Ui.title(modes,"Choose how to play");
         modeSummary=Ui.text(this,"",14,Ui.MINT);modes.addView(modeSummary);
-        modes.addView(Ui.text(this,"Map while you play to record floors, walls, ceilings and clean gameplay images. You handle movement, rewards and ads. Farmer mode runs the automation.",13,Ui.MUTED));
-        Button mapMode=Ui.secondaryButton(this,"Map while I play",()->selectMode(true));mapMode.setTag("mode-manual");modes.addView(mapMode);
+        modes.addView(Ui.text(this,"Live mapping sends original-size game images to Ceiling Scout Studio on your laptop. You play; the laptop builds the map. Farmer runs the automation.",13,Ui.MUTED));
+        Button mapMode=Ui.secondaryButton(this,"Live laptop map",()->selectMode(true));mapMode.setTag("mode-manual");modes.addView(mapMode);
         Button farmMode=Ui.secondaryButton(this,"Use farmer",()->selectMode(false));farmMode.setTag("mode-farmer");modes.addView(farmMode);main.addView(modes);
 
         LinearLayout build=Ui.card(this);Ui.title(build,"Your farming build");
         buildSummary=Ui.text(this,"",14,Ui.MUTED);build.addView(buildSummary);
         Button edit=Ui.secondaryButton(this,"Edit build & farming settings",this::editProfile);edit.setTag("edit-build");build.addView(edit);main.addView(build);
 
-        Button maps=Ui.secondaryButton(this,"Saved maps & Wi-Fi transfer",this::showSavedMaps);maps.setTag("saved-maps");main.addView(maps);
-        LinearLayout screenTools=Ui.card(this);Ui.title(screenTools,"Screen tools");
-        screenTools.addView(Ui.secondaryButton(this,"Preview captured game",()->{if(FarmerService.instance==null){Toast.makeText(this,"Connect controls first",Toast.LENGTH_SHORT).show();return;}FarmerService.instance.requestPreview();}));
-        Switch capture=toggle(screenTools,"capture-compatibility","Compatibility capture",getSharedPreferences("capture",0).getBoolean("compatibility",true));
-        capture.setOnCheckedChangeListener((button,checked)->{getSharedPreferences("capture",0).edit().putBoolean("compatibility",checked).apply();if(FarmerService.instance!=null)FarmerService.instance.setCompatibilityCapture(checked);});main.addView(screenTools);
+        LinearLayout live=Ui.card(this);Ui.title(live,"Your laptop connection");
+        liveSummary=Ui.text(this,"",14,Ui.MUTED);live.addView(liveSummary);
+        live.addView(Ui.text(this,"Open Ceiling Scout Studio on the laptop. Use the same Wi-Fi, then scan its QR with your camera or paste its connection link here. The laptop saves images and map data as you play.",13,Ui.MUTED));
+        Button pair=Ui.secondaryButton(this,"Connect laptop",()->pairLaptop(getSharedPreferences("live",0).getString("endpoint","")));pair.setTag("pair-laptop");live.addView(pair);
+        Button stream=Ui.button(this,"Start live capture",this::startLive);stream.setTag("start-live");live.addView(stream);
+        live.addView(Ui.secondaryButton(this,"Stop live capture",()->{LiveCaptureService.stop(this);refreshStatus();}));main.addView(live);
 
         LinearLayout updates=Ui.card(this);Ui.title(updates,"App updates");
         updates.addView(Ui.text(this,"Download new versions from your GitHub releases, then confirm the update on this phone.",13,Ui.MUTED));
@@ -76,10 +83,10 @@ public final class MainActivity extends Activity {
         LinearLayout guide=Ui.card(this);Ui.title(guide,"Ready in three steps");
         step(guide,"1","Choose Lost Scrapyard","Set the boost to Frozen ★5.");
         step(guide,"2","Calibrate once","On the bar: left, right, then jump area.");
-        step(guide,"3","Start your selected mode","Run farms. Record maps while you play. Save keeps your map.");main.addView(guide);
-        main.addView(Ui.text(this,"Core-filter reward ads are watched when an offer is recognized. Screen analysis stays on this phone. Saved maps transfer to your laptop only when you start sharing. App updates download from GitHub.",12,Ui.MUTED));
+        step(guide,"3","Run or Stream","Run farms. Stream asks Android for screen-sharing permission, then sends game images to your paired laptop.");main.addView(guide);
+        main.addView(Ui.text(this,"Farming analysis stays on this phone. Live capture sends landscape Corebound images only; other apps are skipped. The bar is masked. Map preview, export and original evidence are on the laptop. App updates download from GitHub.",12,Ui.MUTED));
         main.addView(Ui.secondaryButton(this,"View session log",this::showLog));
-        main.addView(Ui.text(this,"CEILING SCOUT 0.4.7 · PERSONAL FARMER",10,Ui.MUTED));refreshStatus();
+        main.addView(Ui.text(this,"CEILING SCOUT 0.5.0 · LIVE STUDIO",10,Ui.MUTED));refreshStatus();
     }
 
     private void step(LinearLayout parent,String number,String title,String detail){
@@ -92,17 +99,37 @@ public final class MainActivity extends Activity {
         boolean connected=FarmerService.instance!=null;
         connection.setText(connected?"●  Controls connected":"○  Connect controls to begin");connection.setTextColor(connected?Ui.MINT:Ui.AMBER);
         primary.setText(connected?"Show floating bar":"Enable controls");
-        if(modeSummary!=null)modeSummary.setText(getSharedPreferences("mode",0).getBoolean("manualMapping",false)?"Selected: Manual mapping · Record / Save":"Selected: Farmer · Run / Pause");
+        if(modeSummary!=null)modeSummary.setText(getSharedPreferences("mode",0).getBoolean("manualMapping",false)?"Selected: Live laptop map · Stream / Stop":"Selected: Farmer · Run / Pause");
+        if(liveSummary!=null){String link=getSharedPreferences("live",0).getString("endpoint","");try{liveSummary.setText(LiveCaptureService.active()?LiveCaptureService.statusLine():"Paired: "+LiveEndpoint.parse(link).base);}catch(IllegalArgumentException e){liveSummary.setText("No laptop paired yet");}}
         Profile p=Profile.load(this);buildSummary.setText((p.weapons.trim().isEmpty()?"Current equipment":p.weapons)+"\n"+p.hookshotCount+" hookshots · "+p.totalJumpBudget()+" jumps per ascent\n"+(p.continuousFarm?"Keeps farming until you stop":p.maxSessionMinutes+" minute session"));
     }
     private void enableControls(){
         new AlertDialog.Builder(this).setTitle("Allow screen reading and touches")
-          .setMessage("Ceiling Scout uses Android Accessibility to read the game, show floating controls and send touches after you press Run. It can close recognized ads and return from Google Play opened by an ad. Screenshots stay on this device.")
+          .setMessage("Ceiling Scout uses Android Accessibility to read the game, show floating controls and send touches after you press Run. It can close recognized ads and return from Google Play opened by an ad. Farming images stay on this device. Live mapping separately asks for Android screen-sharing permission to send game images to your paired laptop.")
           .setPositiveButton("Open Accessibility",(d,w)->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))).setNegativeButton("Cancel",null).show();
     }
     private void openGame(){Intent i=getPackageManager().getLaunchIntentForPackage("com.Overcurve.Corebound");if(i!=null)startActivity(i);else Toast.makeText(this,"Corebound is not installed on this device",Toast.LENGTH_LONG).show();}
-    private void selectMode(boolean manual){getSharedPreferences("mode",0).edit().putBoolean("manualMapping",manual).apply();if(FarmerService.instance!=null)FarmerService.instance.selectMode(manual);refreshStatus();Toast.makeText(this,manual?"Open Corebound and press Record on the bar":"Open Corebound and press Run on the bar",Toast.LENGTH_LONG).show();}
-    private void showSavedMaps(){if(FarmerService.instance!=null)FarmerService.instance.pause("Transferring saved maps");if(mapExport==null)mapExport=new MapExportUi(this);mapExport.show();}
+    private void selectMode(boolean manual){getSharedPreferences("mode",0).edit().putBoolean("manualMapping",manual).apply();if(FarmerService.instance!=null)FarmerService.instance.selectMode(manual);refreshStatus();Toast.makeText(this,manual?"Pair the laptop, then press Start live capture":"Open Corebound and press Run on the bar",Toast.LENGTH_LONG).show();}
+    private void pairLaptop(String initial){
+        EditText input=new EditText(this);input.setTag("laptop-link");input.setText(initial);input.setSingleLine(false);input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);input.setHint("http://192.168…:8767/connect/…");
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Connect your laptop").setMessage("Paste the connection link shown in Ceiling Scout Studio. Both devices must use the same Wi-Fi.").setView(input).setPositiveButton("Connect",null).setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(button->{try{LiveEndpoint endpoint=LiveEndpoint.parse(input.getText().toString());LiveCaptureService.stop(this);getSharedPreferences("live",0).edit().putString("endpoint",endpoint.link()).apply();refreshStatus();dialog.dismiss();}catch(IllegalArgumentException e){input.setError(e.getMessage());}}));dialog.show();
+    }
+    private void startLive(){
+        if(LiveCaptureService.active()){openGame();return;}
+        if(FarmerService.instance==null){enableControls();return;}
+        try{LiveEndpoint.parse(getSharedPreferences("live",0).getString("endpoint",""));}catch(IllegalArgumentException e){pairLaptop("");return;}
+        selectMode(true);
+        MediaProjectionManager manager=getSystemService(MediaProjectionManager.class);
+        Intent permission=Build.VERSION.SDK_INT>=34?manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()):manager.createScreenCaptureIntent();
+        startActivityForResult(permission,CAPTURE_PERMISSION);
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);if(request!=CAPTURE_PERMISSION)return;
+        if(result!=RESULT_OK||data==null){Toast.makeText(this,"Screen sharing cancelled",Toast.LENGTH_SHORT).show();return;}
+        startForegroundService(new Intent(this,LiveCaptureService.class).putExtra("result",result).putExtra("consent",data));
+        if(FarmerService.instance!=null)FarmerService.instance.showOverlay();openGame();
+    }
 
     private EditText field(LinearLayout l,String key,String label,String value,boolean number){
         TextView caption=Ui.text(this,label,12,Ui.MUTED);l.addView(caption);

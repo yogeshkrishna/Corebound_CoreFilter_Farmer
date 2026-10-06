@@ -47,3 +47,7 @@ dist/
 *.jpeg
 *.jpg
 **/__pycache__/
+laptop/.venv/
+laptop/.studio-deps/
+laptop/data/
+*.sqlite

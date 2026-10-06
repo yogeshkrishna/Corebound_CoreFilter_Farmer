@@ -1,4 +1,4 @@
 <resources>
     <string name="app_name">Ceiling Scout</string>
-    <string name="accessibility_description">Ceiling Scout reads screenshots and visible controls, and sends touches to Corebound while you press Run. All screen analysis stays on your phone. It can close recognized ad controls and return from Google Play opened by an ad. Pause or Stop on the floating bar stops automation. It does not read passwords, install apps, or make purchases. This is a personal gameplay automation tool.</string>
+    <string name="accessibility_description">Ceiling Scout reads screenshots and visible controls, and sends touches to Corebound while you press Run. Farming analysis stays on your phone. Live laptop mapping separately asks for Android screen-sharing permission and sends landscape game images to your paired laptop. It can close recognized ad controls and return from Google Play opened by an ad. Pause or Stop on the bar stops automation. It does not read passwords or make purchases. This is a personal gameplay automation tool.</string>
 </resources>

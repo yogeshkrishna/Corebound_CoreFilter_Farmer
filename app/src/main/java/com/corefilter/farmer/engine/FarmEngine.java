@@ -1,7 +1,6 @@
 package com.corefilter.farmer.engine;
 
 import java.util.ArrayList;
-import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -68,7 +67,6 @@ public final class FarmEngine {
         public long gateTimeoutMs = 25000, adTimeoutMs = 120000, adMinWatchMs = 30000;
         public int maxRecoveries = 3;
         public boolean watchFilterAds = true, allowStartInGameplay = true, continuousFarm = true;
-        public boolean manualMapping;
     }
 
     public static final class Action {
@@ -92,23 +90,9 @@ public final class FarmEngine {
         public static Action waitFor(String reason) { return new Action(Kind.WAIT, 0, 0, 0, false, 0, reason); }
     }
 
-    /** Immutable end-of-run map, captured before another run can reset the navigator. */
-    public static final class RunMap {
-        public final MapNavigator.Snapshot snapshot;
-        public final String outcome;
-        public final long runNumber, endedAt;
-        public final String recordingId;
-        private RunMap(MapNavigator.Snapshot snapshot, String outcome, long runNumber, long endedAt,String recordingId) {
-            this.snapshot = snapshot; this.outcome = outcome;
-            this.runNumber = runNumber; this.endedAt = endedAt;
-            this.recordingId=recordingId;
-        }
-    }
-
     private static final Pattern COUNTDOWN = Pattern.compile("(?:skip|close|reward|continue|ad ends?|remaining).{0,20}\\b\\d{1,3}\\s*(?:s|sec|seconds)?\\b|\\b\\d{1,3}\\s*(?:s|sec|seconds)\\b");
     private final Config config;
     private final MapNavigator navigator;
-    private final ArrayDeque<RunMap> finishedMaps = new ArrayDeque<>();
     private State state = State.IDLE;
     private String status = "Ready";
     private long sessionStart = -1, runStart = -1, lastCapture = -1, lastNow = -1;
@@ -122,7 +106,6 @@ public final class FarmEngine {
     private boolean runStartRequested;
     private State suspendedState;
     private int adReturnViews;
-    private String recordingId;
 
 
     public FarmEngine(Config config) {
@@ -131,8 +114,6 @@ public final class FarmEngine {
     }
     public synchronized MapNavigator.Snapshot navigationSnapshot() { return navigator.snapshot(); }
     public synchronized String navigationPhase() { return navigator.phase(); }
-    public synchronized String recordingId() { return inRun?recordingId:null; }
-    public synchronized RunMap takeFinishedMap() { return finishedMaps.pollFirst(); }
     /** Capture adapter resets registration only for an actual authorized Play/Retry tap. */
     public synchronized boolean takeRunStartRequest() {
         boolean requested=runStartRequested;runStartRequested=false;return requested;
@@ -165,9 +146,6 @@ public final class FarmEngine {
     public synchronized void stop() {
         if(inRun&&!resultCounted){
             navigator.finish(false);
-            MapNavigator.Snapshot snapshot=navigator.snapshot();
-            if(snapshot.mapCells>0||snapshot.controlTrace.length>0||snapshot.screenTerrain.length>0)
-                finishedMaps.addLast(new RunMap(snapshot,config.manualMapping?"manual-partial":"interrupted",completedRuns+deaths+1,Math.max(0,lastNow),recordingId));
             resultCounted=true;inRun=false;
         }
         state = State.STOPPED; status = "Stopped"; busyUntil = 0;
@@ -183,7 +161,6 @@ public final class FarmEngine {
         verifiedSelection = false; resetNavigation();
         runStartRequested = false;
         suspendedState=null;adReturnViews=0;
-        recordingId=null;
     }
 
     public synchronized Action next(Frame f) {
@@ -192,10 +169,6 @@ public final class FarmEngine {
         if (f.now < 0 || f.capturedAt < 0 || f.capturedAt > f.now || (lastNow >= 0 && f.now < lastNow))
             return pause("Invalid screen clock; restart capture");
         lastNow = f.now;
-        if(config.manualMapping){
-            if(f.capturedAt<=lastCapture)return Action.waitFor("Waiting for a fresh mapping frame");
-            lastCapture=f.capturedAt;return recordManual(f);
-        }
         if (sessionStart < 0) sessionStart = f.now;
         if (!config.continuousFarm && f.now - sessionStart >= clamp(config.maxSessionMinutes, 1, 1440) * 60000)
             return pause("Session time limit reached");
@@ -279,8 +252,6 @@ public final class FarmEngine {
         if (inRun && !resultCounted && !crate) {
             if (death) deaths++; else completedRuns++;
             navigator.finish(!death);
-            finishedMaps.addLast(new RunMap(navigator.snapshot(), death ? "defeat" : "cleared",
-                    completedRuns + deaths, f.now,null));
             resultCounted = true; stopAfterResult = limitReached();
         }
         Token watch = button(f, "watch ad", "watch", "watch video", "watch for bonus", "watch reward");
@@ -398,25 +369,6 @@ public final class FarmEngine {
         animationTaps=0;
         runStart = now;
         resetNavigation();
-        recordingId=config.manualMapping?java.util.UUID.randomUUID().toString():null;
-    }
-    /** Mapping never visits menu/ad handlers or dispatches hypothetical navigation. */
-    private Action recordManual(Frame f){
-        if(!config.gamePackage.equals(f.packageName)||!f.captureOk)return Action.waitFor("Mapping waits for Corebound; you keep control");
-        boolean death=has(normalized(allText(f)),"you died","defeated","run failed","robot destroyed","you were destroyed");
-        if(!f.observedAd&&!f.crateScreen&&(f.endScreen||completeTitle(f)||death)){
-            if(inRun&&!resultCounted){
-                navigator.finish(!death);if(death)deaths++;else completedRuns++;
-                finishedMaps.addLast(new RunMap(navigator.snapshot(),death?"manual-defeat":"manual-cleared",completedRuns+deaths,f.now,recordingId));
-                resultCounted=true;inRun=false;
-            }
-            state=State.END_SCREEN;status="Map saved; handle rewards and Play yourself";return Action.waitFor(status);
-        }
-        if(f.gameplay&&!f.observedAd){
-            if(!inRun)startRun(f.now);
-            state=State.GAMEPLAY;navigator.record(f);status="Recording your route and ceilings; no automated touches";
-        }else status="Recording waits for gameplay; handle menus and ads yourself";
-        return Action.waitFor(status);
     }
     private void resetNavigation() {
         navigator.reset();

@@ -9,19 +9,21 @@ permissions:
   contents: read
 
 jobs:
-  receiver:
+  studio:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-python@v6
         with:
-          node-version: '24'
-      - name: Verify laptop receiver and browser checksum
-        run: node tools/test-map-receiver.mjs
+          python-version: '3.12'
+      - name: Verify live receiver and native reconstruction
+        run: |
+          python -m pip install -r laptop/requirements.txt
+          python -m unittest discover -s laptop/tests -v
   release:
-    needs: receiver
+    needs: studio
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -69,6 +71,7 @@ jobs:
           java -cp analysis/test-classes PixelVisionTest .
           java -cp analysis/test-classes NavigationReplayTest .
           mkdir -p release
+          python3 laptop/package.py --output release/Ceiling-Scout-Studio.zip
           cp app/build/outputs/apk/debug/app-debug.apk release/Ceiling-Scout.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/Ceiling-Scout.apk | tee release/signature.txt
           grep -F 'Signer #1 certificate SHA-256 digest: 65aa3b42d67d26d59344b24ecc0459a97b9d9f124a9961d980d76a36137f5097' release/signature.txt
@@ -81,9 +84,9 @@ jobs:
         run: |
           notes_file="docs/release-${RELEASE_TAG#v}.md"
           if test -f "$notes_file"; then
-            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 --title "Ceiling Scout $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
+            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 release/Ceiling-Scout-Studio.zip --title "Ceiling Scout $RELEASE_TAG" --notes-file "$notes_file" --target "$GITHUB_SHA"
           else
-            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 --title "Ceiling Scout $RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
+            gh release create "$RELEASE_TAG" release/Ceiling-Scout.apk release/Ceiling-Scout.apk.sha256 release/Ceiling-Scout-Studio.zip --title "Ceiling Scout $RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
           fi
       - name: Remove signing key from the runner
         if: always()

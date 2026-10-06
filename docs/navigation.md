@@ -1,10 +1,10 @@
-# Corridor controller, version 0.4.7
+# Corridor controller (farming)
 
 The controller commits to a direction through each cavern. Its normal action is forward movement with a base jump when grounded and when the measured trajectory clears the roof. It does not navigate an air grid or spend all Hookshots as a repeated jump batch.
 
 Version 0.4.4 releases a shaft-entry waypoint when an observed descent reaches a supported lower exit. It can select the opposite passage without holding the old entry position. Fresh local passage evidence overrides a falsely protruding mapped platform corner while stepping into a drop. During a roof scout, a clear column beside a rectangular ledge permits a short sideways alignment before upward Hookshots resume. A continuous flat roof does not permit that probe.
 
-Temporary manual mapping bypasses the controller entirely. It records terrain, camera measurements, path and ceiling visibility while the user supplies all touches. Unlinked views remain separate; sampled JPEGs are retained alongside the map for later inspection. It does not estimate the user's jump consumption or learn a replayable touch sequence.
+Live laptop mapping bypasses this controller. The phone only captures game images; the laptop reconstructs them. See [live mapping](live-mapping.md).
 
 ## Decisions during a run
 
@@ -39,13 +39,9 @@ The service captures during gestures and retains only the newest processed obser
 
 A hull intersection starts a burn attempt. Off-screen disappearance does not establish a kill. A contacted track can retire after burn grace and multiple clear local absence views. A completed sector can clear ordinary tracks while retaining hanging candidates. Pixel appearance is not a validated Spectrum/Dreadnought classifier.
 
-Terrain observations accumulate into an atlas. Adjacent floor, roof and wall segments merge into longer borders. Separate arrays retain player path, ceiling inspection and enemy history. A cleared, failed or manually paused run snapshots these records before resetting the navigator, and the service writes the map bundle asynchronously. The JSON also keeps the latest 1,200 decisions with support, camera confidence, jump budget, wall contacts and reasons. Unknown or unlinked areas stay explicit; clearing the run does not automatically set complete map coverage.
+The farmer maintains a fresh, local navigation atlas each run, with player paths, ceiling inspection and enemy history. These are in-memory steering observations, not exported map archives. Clearing a run does not prove complete map coverage. Laptop reconstruction is independent and does not yet steer farming.
 
-The current controller starts a fresh atlas each run. Stored bundles are for future layout comparison; the app does not yet identify a fixed layout pool or replay a previous route.
-
-The JSON additionally retains up to 450 terrain grids sampled at least 700 ms apart, with capture times, camera confidence, player position and corridor direction. Missing camera offsets are null. These local observations survive camera gaps without being pasted into the world atlas at invented positions.
-
-See [verification](verification-0.4.7.md) and [laptop transfer](map-export.md). Synthetic closed-loop tests exercise two downward direction changes and a forward sweep without unnecessary air impulses. These checks do not establish perfect perception, full real-level coverage, live farming speed or unattended success on a phone.
+See [live mapping](live-mapping.md) and [recorded controller verification](verification-0.4.7.md). Synthetic and recorded checks do not establish perfect perception, real-level coverage or unattended success.
 
 In 0.4.3, a camera-origin recovery retains an active scout or descent. Gameplay text recognition runs independently of steering and checks the full view; ads and menu decisions still wait for text recognition. Install-card evidence overrides false gameplay pixels. Two fresh confirmed Corebound views end an ad session. Pausing an ad preserves its state for resuming and bounded Play Store recovery. Overlay menus suspend new decisions and captures until dismissed; rotation clamps the bar and menu to the current display.
 

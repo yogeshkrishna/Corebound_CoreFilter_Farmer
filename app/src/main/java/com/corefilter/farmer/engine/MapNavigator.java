@@ -167,27 +167,6 @@ public final class MapNavigator {
     public boolean sectorCleared() { return sectorCleared; }
     public void finish(boolean success) { runEnded=true;runSucceeded=success;phase="COMPLETE";previousCommand=false;if(success)resolveOrdinary(); }
     public Decision observe(FarmEngine.Frame f) { return next(f,false); }
-    /** Human mapping consumes observations only, with no route goals or simulated jumps. */
-    public void record(FarmEngine.Frame f){
-        dispatch=false;frame=f;now=f.now;phase="MANUAL_MAPPING";previousCommand=false;goal=null;
-        registerCamera(f);px=validCoordinate(f.playerX)?f.playerX+cameraX:Double.NaN;py=validCoordinate(f.playerY)?f.playerY+cameraY:Double.NaN;
-        recordScreenGeometry();
-        // Without a tracked player, previousAt can remain unset for many views.
-        // Only the first terrain view may establish that local origin; later
-        // unregistered views must remain raw evidence instead of repainting it.
-        if(registered||(previousAt<0&&!pendingAnchor&&tiles.isEmpty())){
-            if(validTerrain(f))integrateTerrain(f);
-            if(f.playerConfidence>=PLAYER_MIN&&valid(f.playerX,f.playerY)){
-                fillPlayerMask(f);updateMotionAndJumps(f);updateTracks(f);recordPath();
-                if(Math.abs(velocityX)>.04)corridorDirection=velocityX>0?1:-1;
-            }
-            buildBorders();updateCeilingCoverage();
-        }
-        if(f.completedSector>completedSector){completedSector=f.completedSector;activeSector=completedSector+1;}
-        usedJumps=0;learningJump=false;phase="MANUAL_MAPPING";
-        reason="Human route recorded; no navigation commands generated";
-    }
-
     public Decision next(FarmEngine.Frame f) {
         return next(f,true);
     }

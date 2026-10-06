@@ -5,13 +5,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <queries><package android:name="com.Overcurve.Corebound" /></queries>
-    <application android:theme="@android:style/Theme.Material.NoActionBar" android:label="Ceiling Scout" android:icon="@drawable/ic_scout" android:allowBackup="false" android:supportsRtl="true">
+    <application android:theme="@android:style/Theme.Material.NoActionBar" android:label="Ceiling Scout" android:icon="@drawable/ic_scout" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="true">
         <receiver android:name=".UpdateInstallReceiver" android:exported="false"/>
-        <service android:name=".MapSharingService" android:exported="false" android:foregroundServiceType="connectedDevice"/>
-        <activity android:name=".MainActivity" android:exported="true">
+        <service android:name=".LiveCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+            <intent-filter><action android:name="android.intent.action.VIEW"/><category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/><data android:scheme="ceilingscout" android:host="connect"/></intent-filter>
         </activity>
         <service android:name=".FarmerService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="Ceiling Scout controls">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>

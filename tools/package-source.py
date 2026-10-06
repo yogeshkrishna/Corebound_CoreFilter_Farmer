@@ -8,6 +8,7 @@ root_files=['.gitignore','.gitattributes','build.gradle','settings.gradle','grad
 files=[root/name for name in root_files]
 for folder in ['app/src','gradle','tools','tests','docs','.github']:
     files.extend(p for p in (root/folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts)
+files.extend(p for p in (root/'laptop').rglob('*') if p.is_file() and not any(x in p.parts for x in ['.venv','.studio-deps','__pycache__','data']))
 fixtures=['clip2_56.5.png','clip1_81.5.png','clip2_14.0.png','clip2_49.0.png','clip2_55.png','clip2_58.png','clip1_83.png','clip2_60.png','clip2_0.png','video_metadata.json']
 files.extend(root/'analysis'/name for name in fixtures)
 files.extend(root/'analysis'/'v2'/('field_'+str(t)+'.png') for t in [0,10,25,40,130,170])

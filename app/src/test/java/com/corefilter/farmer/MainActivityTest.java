@@ -40,11 +40,26 @@ public class MainActivityTest {
         try(ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).setup()){
             MainActivity activity=controller.get();View root=activity.getWindow().getDecorView();
             root.findViewWithTag("mode-manual").performClick();controller.recreate();activity=controller.get();
-            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Selected: Manual mapping"));
-            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Preview captured game"));
-            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Saved maps & Wi-Fi transfer"));
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Selected: Live laptop map"));
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Start live capture"));
+            assertFalse(textOf(activity.getWindow().getDecorView()).contains("Saved maps & Wi-Fi transfer"));
             activity.getWindow().getDecorView().findViewWithTag("mode-farmer").performClick();
             assertFalse(activity.getSharedPreferences("mode",0).getBoolean("manualMapping",true));
+        }
+    }
+
+    @Test public void laptopPairingRejectsBadLinksAndSurvivesRecreation(){
+        try(ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).setup()){
+            MainActivity activity=controller.get();activity.getSharedPreferences("live",0).edit().clear().commit();
+            activity.getWindow().getDecorView().findViewWithTag("pair-laptop").performClick();
+            Shadows.shadowOf(Looper.getMainLooper()).idle();
+            AlertDialog dialog=ShadowAlertDialog.getLatestAlertDialog();
+            EditText input=dialog.getWindow().getDecorView().findViewWithTag("laptop-link");
+            input.setText("http://8.8.8.8:8767/connect/"+"A".repeat(43));dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            assertFalse(activity.getSharedPreferences("live",0).contains("endpoint"));assertNotNull(input.getError());
+            String link="http://192.168.68.63:8767/connect/"+"A".repeat(43);input.setText(link);dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick();
+            controller.recreate();assertEquals(link,controller.get().getSharedPreferences("live",0).getString("endpoint",""));
+            assertTrue(textOf(controller.get().getWindow().getDecorView()).contains("Paired: http://192.168.68.63:8767"));
         }
     }
 
@@ -56,7 +71,7 @@ public class MainActivityTest {
             assertTrue(visibleText.contains("Enable controls"));
             assertTrue(visibleText.contains("Edit build & farming settings"));
             assertTrue(visibleText.contains("Check for updates"));
-            assertTrue(visibleText.contains("Saved maps & Wi-Fi transfer"));
+            assertTrue(visibleText.contains("Connect laptop"));
             assertTrue(visibleText.contains("3 hookshots · 7 jumps"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("dashboard-insets"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("check-updates"));
@@ -69,7 +84,7 @@ public class MainActivityTest {
             int width=Ui.dp(activity,360),height=Ui.dp(activity,800);
             dashboard.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
             dashboard.layout(0,0,width,height);
-            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates","saved-maps"}){
+            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates","pair-laptop","start-live"}){
                 View action=dashboard.findViewWithTag(key);Rect rect=new Rect(0,0,action.getWidth(),action.getHeight());
                 dashboard.offsetDescendantRectToMyCoords(action,rect);
                 assertTrue(key+" clips left",rect.left>=0);assertTrue(key+" clips right",rect.right<=width);

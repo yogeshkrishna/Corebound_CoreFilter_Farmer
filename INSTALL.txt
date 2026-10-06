@@ -1,43 +1,29 @@
-CEILING SCOUT 0.4.6 — PHONE UPDATE
+CEILING SCOUT 0.5.0 — LIVE LAPTOP MAPPING
 
-1. In your existing Ceiling Scout app, tap Check for updates > Download & install.
-   Version 0.2.0 after the repository rename: choose Update source, enter
-   yogeshkrishna/Corebound_CoreFilter_Farmer, then Save & check. Only needed once.
-2. Confirm Install in Android's installer. If needed, allow installs from Ceiling Scout once.
-   Install over the old app. Do NOT uninstall: your build and calibration stay saved.
-   First install: https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest > Ceiling-Scout.apk.
-3. Open Ceiling Scout > Show floating bar > Open Corebound.
-4. Choose a mode in the app: Use farmer, or Map while I play.
-   Select Lost Scrapyard boosted to Frozen five stars.
-   Farmer: press Run. Manual mapping: press Record, play and inspect the ceilings yourself, then Save.
-   Default: three Hookshots / seven jumps. Change equipment through Edit build & farming settings.
-5. Build, Calibrate and Stop are under the bar's ••• menu. Calibrate once if needed.
-   Preview, compatibility capture and Saved maps & Wi-Fi transfer are in the app.
-   Manual mapping saves completed runs automatically, and Save keeps unfinished routes.
+PHONE
+1. Ceiling Scout > Check for updates > Download & install > confirm Install.
+   Install over the old app to retain build and calibration.
+2. Enable Ceiling Scout controls in Android Accessibility if disconnected.
+3. Choose Live laptop map. Use the same Wi-Fi as the laptop.
+4. Scan Studio's QR, or paste its connection link under Connect laptop.
+5. Start live capture > accept Android screen sharing > play Corebound manually.
+   Stream does not control the game. Stop on the bar ends capture.
 
-FUTURE UPDATES
-Ceiling Scout > Check for updates > Download & install.
-Allow installs from Ceiling Scout once if Android asks, then confirm Install.
-No more emailing yourself APKs. An update must first be published to GitHub Releases.
+LAPTOP
+Extract Ceiling-Scout-Studio.zip. Double-click Start Studio.cmd.
+First launch installs image tools. Python 3.12+ is required.
+Keep Studio running. Pan/zoom and export native PNG or map data.
+Originals and metadata stay in Documents\Ceiling Scout Live.
+The link survives app switches/restarts; a changed laptop IP needs reconnection.
+Weak matches create separate sections. Unseen pixels stay transparent.
 
-IF CONTROLS ARE DISCONNECTED
-Enable Ceiling Scout controls in Android Accessibility. Android may first require
-App info > menu > Allow restricted settings for a sideloaded app.
+FARMING
+Choose Use farmer, open Lost Scrapyard with Frozen five stars, then Run.
+Build, Calibrate and Stop & hide are under the three-dot menu.
+Default: three Hookshots / seven jumps. Update your build in settings.
+Laptop maps do not yet guide farming. Supervise the first runs.
 
-Pause prevents new touches; an already issued gesture releases within 700 ms.
-Stop & hide ends the session. Reopen the bar from the app.
-Supervise the first updated runs. The changes pass recorded-frame and logic checks;
-they still need a phone trial. Unknown ads or ambiguous filter offers may pause.
-
-SAVED MAPS ON YOUR LAPTOP
-After a cleared, failed or paused run, open Saved maps & Wi-Fi transfer > Start Wi-Fi transfer.
-Connect the laptop to the same Wi-Fi and open the link shown on the phone.
-Keep the phone's map page open. Download the receiver from the laptop page and run it
-as described there. It saves ZIPs in Documents\Ceiling Scout Maps, verifies them,
-then removes only the corresponding verified phone copies.
-Each ZIP includes map.png (picture) and map.json (raw observations/build/confidence).
-Unknown areas remain blank. Fixed-pool identification is for a future iteration.
-
-Version 0.4.6 fixes capture orientation and squeezing. Compatibility capture is
-enabled automatically once. Open Corebound in landscape and use Preview to check it.
-See README.md, docs/map-export.md and docs/verification-0.4.6.md for details.
+The old phone archive mapper, Preview and ZIP transfer have been removed.
+Old private phone recordings are removed when this update opens.
+Old laptop recordings are never imported or deleted by this app.
+This version needs a phone trial. Native scale is not guaranteed full coverage.
