@@ -1,29 +1,33 @@
-CEILING SCOUT 0.5.0 — LIVE LAPTOP MAPPING
+CEILING SCOUT 0.6.0 — OFFLINE MAPS
 
-PHONE
-1. Ceiling Scout > Check for updates > Download & install > confirm Install.
-   Install over the old app to retain build and calibration.
-2. Enable Ceiling Scout controls in Android Accessibility if disconnected.
-3. Choose Live laptop map. Use the same Wi-Fi as the laptop.
-4. Scan Studio's QR, or paste its connection link under Connect laptop.
-5. Start live capture > accept Android screen sharing > play Corebound manually.
-   Stream does not control the game. Stop on the bar ends capture.
+UPDATE
+Ceiling Scout > Check for updates > Download & install > confirm Install.
+Or download Ceiling-Scout.apk from the release page and install over the old app.
+Do not uninstall first: installing over it keeps your build and calibration.
 
-LAPTOP
-Extract Ceiling-Scout-Studio.zip. Double-click Start Studio.cmd.
-First launch installs image tools. Python 3.12+ is required.
-Keep Studio running. Pan/zoom and export native PNG or map data.
-Originals and metadata stay in Documents\Ceiling Scout Live.
-The link survives app switches/restarts; a changed laptop IP needs reconnection.
-Weak matches create separate sections. Unseen pixels stay transparent.
+RECORD AND BUILD — NO LAPTOP OR WI-FI NEEDED
+1. Enable Ceiling Scout controls in Android Accessibility if disconnected.
+2. Choose Use offline mapper > Record a map > allow Android screen capture.
+3. Play the level yourself. Cover the floor, high ceilings, shafts and turns.
+4. Tap Stop on the floating bar when your run is finished.
+5. Open Ceiling Scout > Recorded maps · build, preview & export.
+6. Tap Build / Resume map. Keep the app allowed to run in the background.
+   Progress appears in the app and notification. Pause and resume when needed.
+7. Once ready: View map & save PNG > select section > Save native PNG.
+   Choose a destination, then wait for the export-complete message in Recorded maps.
+
+The preview fits your display. Export keeps original pixel dimensions.
+Uncertain joins stay separate. Unseen areas stay transparent.
+Processing time depends on the recording and your phone; it can be substantial.
+Original recordings stay on this phone. Do not clear app storage or uninstall.
+Share original recording lets you send a ZIP of the evidence when needed.
+
+OPTIONAL LAPTOP
+Studio remains optional for live mapping. Use Connect laptop and Start live capture
+under Optional · live laptop connection. Both devices need the same Wi-Fi for this mode.
 
 FARMING
-Choose Use farmer, open Lost Scrapyard with Frozen five stars, then Run.
+Use farmer > Lost Scrapyard with Frozen five stars > Run.
 Build, Calibrate and Stop & hide are under the three-dot menu.
-Default: three Hookshots / seven jumps. Update your build in settings.
-Laptop maps do not yet guide farming. Supervise the first runs.
-
-The old phone archive mapper, Preview and ZIP transfer have been removed.
-Old private phone recordings are removed when this update opens.
-Old laptop recordings are never imported or deleted by this app.
-This version needs a phone trial. Native scale is not guaranteed full coverage.
+Default: three Hookshots / seven jumps. Edit your build in settings.
+Recorded maps do not yet steer farming. Native scale is not guaranteed full coverage.

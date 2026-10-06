@@ -4,21 +4,25 @@ Android farmer and live laptop mapper for **Corebound → Lost Scrapyard → Fro
 
 **[Download the latest release](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** — `Ceiling-Scout.apk` for Android 11+, `Ceiling-Scout-Studio.zip` for the laptop.
 
-## Live mapping in 0.5.0
+## Offline mapping (0.6.0)
 
-The phone-side mapper, saved-map queue, preview overlay and ZIP sharing server have been removed. The phone sends **native-resolution lossless PNGs directly to your paired laptop** using Android screen sharing. Ceiling Scout Studio saves the originals and reconstructs a map concurrently. Farming remains a separate choice.
+Record a full run, then build and export its map entirely on your Android phone. No Wi-Fi, laptop, account or network connection is needed for recording or processing.
 
-1. On the laptop, extract `Ceiling-Scout-Studio.zip` and open **Start Studio.cmd**. First launch installs image tools. Python 3.12+ is required; this developer laptop can use its bundled Python.
-2. Update the phone through **Check for updates → Download & install**, then confirm Android's installer. Install over the old app to retain your build and calibration.
-3. Connect both devices to the same Wi-Fi. Choose **Live laptop map → Connect laptop** on the phone and paste Studio's link, or scan its QR with your phone camera.
-4. Press **Start live capture**, accept Android's screen-sharing prompt, then play Corebound manually. Cover the floor, high roofs, shafts and turns. You handle enemies, rewards and ads.
-5. Watch the map on the laptop. Pan/zoom, select separate sections when tracking is lost, and export **native PNG** or **map data**. **Stop** on the floating bar ends capture.
+1. Update through **Check for updates → Download & install**, then confirm Android's installer. Install over the existing app to retain build and calibration. You can also download `Ceiling-Scout.apk` from the latest release.
+2. Enable **Ceiling Scout controls** in Android Accessibility if disconnected. Choose **Use offline mapper**, then **Record a map** and accept Android's screen-capture prompt.
+3. Play Corebound manually. Cover every corridor, high ceiling, shaft and turn. The floating **Stop** button ends recording. You handle rewards and ads.
+4. Return to Ceiling Scout → **Recorded maps · build, preview & export** → **Build / Resume map**. Stop capture first. Progress remains visible in the app and foreground notification while processing runs in the background. Pause and resume if needed.
+5. Once complete, choose **View map & save PNG**, select a section, then **Save native PNG** and choose a destination. Export continues in the background; reopening Recorded maps shows its result. The display preview is fitted, but export retains original pixel dimensions.
 
-The link uses a persistent key and fixed port, so app switches do not replace it. A changed Wi-Fi IP requires the newly displayed link. The laptop app must stay running. Original PNGs, capture time, device/orientation, masks, skipped upload count, checksums and registration results stay under **Documents\Ceiling Scout Live**. Earlier archives are never imported. The update removes obsolete private phone recordings on first launch; it does not delete laptop folders.
+Original PNGs, capture metadata, cached features, camera constraints/positions and native tiles stay in app-private storage. Uninstalling or clearing app storage removes them. **Share original recording** prepares a ZIP containing this evidence for a destination you choose. Recording stops when less than 256 MB remains. Capture targets up to eight frames per second, skips while a PNG is being saved, and ignores other apps and portrait frames. Actual rate depends on your phone's encoding and storage speed.
 
-Capture targets at most eight frames/second and skips frames while an upload is busy. Actual throughput depends on encoding and Wi-Fi. Other apps and portrait frames are skipped. Game menus/ads remain original evidence; reconstruction requires visible movement pads. The bar stays visible and is masked. Unknown areas stay transparent.
+Batch analysis first tracks adjacent views, then checks revisits against the whole recording and refines translation constraints. It never scales or rotates map pixels. Terrain is assembled in bounded 512 × 512 tiles; PNG export streams rows, avoiding a full-map bitmap. The preview may be reduced to 2048 pixels on its longest side. Weak or conflicting joins stay in separate sections. Missing observations remain transparent. Native scale does not guarantee full coverage or perfect registration, and extra processing cannot recover unseen ceilings. The real phone/game still needs a trial.
 
-Reconstruction applies translation only. Registration may analyze a smaller image, but map tiles and exports retain the native pixel scale. Conflicting or weak matches are rejected; unlinked sections are **not** combined at guessed positions. Native scale does not guarantee full coverage or perfect registration. See [Studio setup and limits](laptop/README.md) and [capture protocol](docs/live-mapping.md).
+Android may interrupt long background jobs or the phone vendor may restrict them. Resume from Recorded maps; features, matching progress and completed tile frames are cached. Android 15 limits this foreground processing service to its daily time budget. The APK supports ARM64 and x86_64 Android 11+ devices.
+
+## Optional live laptop mapping
+
+Live streaming remains available under **Optional · live laptop connection**. Extract `Ceiling-Scout-Studio.zip`, open **Start Studio.cmd**, connect both devices to the same Wi-Fi, paste the Studio link under **Connect laptop**, and press **Start live capture**. Studio saves originals and reconstructs concurrently. Its link persists across restarts; a changed laptop IP needs reconnection. Python 3.12+ is required for first setup. See [Studio setup](laptop/README.md) and [capture protocol](docs/live-mapping.md). Existing laptop recordings are not imported into the offline mapper.
 
 ## Farming
 
@@ -26,7 +30,7 @@ Choose **Use farmer**, select Lost Scrapyard with Frozen ★5 in Corebound, then
 
 The farmer jump-moves through visible corridors, uses air jumps for hidden roofs, attempts Ember contacts, revisits unresolved enemies, handles observed drops/turns, and repeats recognized runs. Core-filter reward ads are watched when the displayed offer is recognized. Countdown/close/end-card handling and bounded Play Store recovery are separate. Unknown screens can need manual intervention.
 
-The supplied build has **three Magmatic ★7+ Hookshots: seven jumps**. Edit equipment and timings through **Edit build & farming settings**. Notes do not calculate damage. Calibrate once if automatic control location is wrong. Laptop maps are not yet used to steer farming. See [controller details](docs/navigation.md).
+The supplied build has **three Magmatic ★7+ Hookshots: seven jumps**. Edit equipment and timings through **Edit build & farming settings**. Notes do not calculate damage. Calibrate once if automatic control location is wrong. Recorded maps are not yet used to steer farming. See [controller details](docs/navigation.md).
 
 ## Updates and development
 

@@ -18,7 +18,7 @@ import java.util.UUID;
 import java.util.concurrent.*;
 import org.json.*;
 
-/** Native, lossless game frames go straight to the paired laptop. No phone archive or mapper. */
+/** Bounded native capture, saved locally by default; laptop streaming remains optional. */
 public final class LiveCaptureService extends Service {
     public static volatile LiveCaptureService instance;
     private static final int NOTICE=42;
@@ -27,6 +27,9 @@ public final class LiveCaptureService extends Service {
     private final ExecutorService sender=Executors.newSingleThreadExecutor();
     private MediaProjection projection;private VirtualDisplay display;private ImageReader reader;
     private LiveEndpoint endpoint;private final String session=UUID.randomUUID().toString();
+    private File recording;private boolean offline;private String finalMessage="Recording saved. Ready to build.";
+    private static volatile boolean finishing;
+    public static boolean finishing(){return finishing;}
     private volatile boolean closed,busy;private volatile String status="Connecting to laptop";
     private volatile long sent,skipped,sequence;private long lastSample;
     private int width,height,dpi;
@@ -40,12 +43,14 @@ public final class LiveCaptureService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int id){
         if(intent==null||"stop".equals(intent.getAction())){stopSelf();return START_NOT_STICKY;}if(projection!=null)return START_NOT_STICKY;
         try{
-            endpoint=LiveEndpoint.parse(getSharedPreferences("live",0).getString("endpoint",""));
+            offline=intent.getBooleanExtra("offline",false);
+            if(offline){if(OfflineMapService.active())throw new IllegalStateException("Pause map processing before recording");recording=RecordingStore.create(this);}
+            else endpoint=LiveEndpoint.parse(getSharedPreferences("live",0).getString("endpoint",""));
             Profile profile=Profile.load(this);build=new JSONObject().put("profile",profile.name).put("hull",profile.hull).put("hookshots",profile.hookshotCount).put("jumpBudget",profile.totalJumpBudget()).put("weapons",profile.weapons.substring(0,Math.min(512,profile.weapons.length())));
-            NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("live-capture","Live laptop mapping",NotificationManager.IMPORTANCE_LOW));
+            NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("live-capture","Game image recording",NotificationManager.IMPORTANCE_LOW));
             PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
             PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,LiveCaptureService.class).setAction("stop"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-            Notification n=new Notification.Builder(this,"live-capture").setSmallIcon(R.drawable.ic_scout).setContentTitle("Live map → laptop").setContentText("Full-resolution game capture. Tap to view; Stop ends capture.").setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Stop",stop).build()).build();
+            Notification n=new Notification.Builder(this,"live-capture").setSmallIcon(R.drawable.ic_scout).setContentTitle(offline?"Recording map on this phone":"Live map → laptop").setContentText("Original game images. Tap to view; Stop ends capture.").setContentIntent(open).setOngoing(true).addAction(new Notification.Action.Builder(null,"Stop",stop).build()).build();
             startForeground(NOTICE,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
             Intent consent=intent.getParcelableExtra("consent");int result=intent.getIntExtra("result",Activity.RESULT_CANCELED);
             if(consent==null||result!=Activity.RESULT_OK)throw new IllegalArgumentException("Screen-sharing permission is required");
@@ -97,6 +102,7 @@ public final class LiveCaptureService extends Service {
     private void send(Bitmap image,JSONObject metadata){
         HttpURLConnection connection=null;
         try{
+            if(offline){RecordingStore.saveFrame(recording,metadata.getLong("sequence"),image,metadata);sent++;setStatus(sent+" images saved · "+skipped+" skipped");return;}
             if(closed||FarmerService.instance==null||!FarmerService.GAME.equals(FarmerService.instance.foregroundPackage()))return;
             ByteArrayOutputStream png=new ByteArrayOutputStream();if(!image.compress(Bitmap.CompressFormat.PNG,100,png))throw new IOException("Could not encode native image");
             metadata.put("uploadStartedWallMs",System.currentTimeMillis());
@@ -106,9 +112,14 @@ public final class LiveCaptureService extends Service {
             int code=connection.getResponseCode();if(code!=200&&code!=201)throw new IOException(code==401?"Reconnect using the laptop's current link":"Laptop response "+code);
             try(InputStream response=connection.getInputStream()){byte[] reply=new byte[4096];int used=0,n;while(used<reply.length&&(n=response.read(reply,used,reply.length-used))!=-1)used+=n;JSONObject ack=new JSONObject(new String(reply,0,used,java.nio.charset.StandardCharsets.UTF_8));if(!ack.optBoolean("stored",false))throw new IOException("Laptop did not acknowledge storage");}
             sent++;setStatus(sent+" frames · "+image.getWidth()+"×"+image.getHeight()+" · "+skipped+" skipped");
-        }catch(Exception e){if(!closed)setStatus("Laptop offline · retrying ("+e.getMessage()+")");}
+        }catch(Exception e){if(offline){finalMessage=e.getMessage();setStatus(finalMessage);main.post(this::stopSelf);}else if(!closed)setStatus("Laptop offline · retrying ("+e.getMessage()+")");}
         finally{if(connection!=null)connection.disconnect();image.recycle();busy=false;}
     }
     private void setStatus(String value){if(value.equals(status))return;status=value;main.post(()->{if(!closed&&FarmerService.instance!=null)FarmerService.instance.liveStatus(value);});}
-    @Override public void onDestroy(){closed=true;instance=null;if(display!=null)display.release();if(reader!=null)reader.close();if(projection!=null)projection.stop();captureThread.quitSafely();sender.shutdownNow();stopForeground(STOP_FOREGROUND_REMOVE);if(FarmerService.instance!=null)FarmerService.instance.liveStatus("Live capture stopped");super.onDestroy();}
+    @Override public void onDestroy(){closed=true;instance=null;finishing=recording!=null;
+        // Finish the accepted frame before committing the stopped state. No shutdownNow:
+        // interrupting its PNG write could silently lose the last part of a run.
+        capture.post(()->{if(display!=null)display.release();if(reader!=null)reader.close();if(projection!=null)projection.stop();
+            sender.execute(()->{try{if(recording!=null)RecordingStore.finish(recording,finalMessage);}catch(Exception ignored){}finally{finishing=false;}});sender.shutdown();captureThread.quitSafely();});
+        stopForeground(STOP_FOREGROUND_REMOVE);if(FarmerService.instance!=null)FarmerService.instance.liveStatus(offline?"Recording saved · open Maps":"Live capture stopped");super.onDestroy();}
 }

@@ -40,7 +40,7 @@ public class MainActivityTest {
         try(ActivityController<MainActivity> controller=Robolectric.buildActivity(MainActivity.class).setup()){
             MainActivity activity=controller.get();View root=activity.getWindow().getDecorView();
             root.findViewWithTag("mode-manual").performClick();controller.recreate();activity=controller.get();
-            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Selected: Live laptop map"));
+            assertTrue(textOf(activity.getWindow().getDecorView()).contains("Selected: Offline mapper"));
             assertTrue(textOf(activity.getWindow().getDecorView()).contains("Start live capture"));
             assertFalse(textOf(activity.getWindow().getDecorView()).contains("Saved maps & Wi-Fi transfer"));
             activity.getWindow().getDecorView().findViewWithTag("mode-farmer").performClick();
@@ -72,6 +72,8 @@ public class MainActivityTest {
             assertTrue(visibleText.contains("Edit build & farming settings"));
             assertTrue(visibleText.contains("Check for updates"));
             assertTrue(visibleText.contains("Connect laptop"));
+            assertTrue(visibleText.contains("Record a map"));
+            assertTrue(visibleText.contains("Recorded maps"));
             assertTrue(visibleText.contains("3 hookshots · 7 jumps"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("dashboard-insets"));
             assertNotNull(activity.findViewById(android.R.id.content).findViewWithTag("check-updates"));
@@ -84,7 +86,7 @@ public class MainActivityTest {
             int width=Ui.dp(activity,360),height=Ui.dp(activity,800);
             dashboard.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(height,View.MeasureSpec.EXACTLY));
             dashboard.layout(0,0,width,height);
-            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates","pair-laptop","start-live"}){
+            for(String key:new String[]{"connect-controls","open-game","edit-build","check-updates","pair-laptop","start-live","record-offline","offline-maps"}){
                 View action=dashboard.findViewWithTag(key);Rect rect=new Rect(0,0,action.getWidth(),action.getHeight());
                 dashboard.offsetDescendantRectToMyCoords(action,rect);
                 assertTrue(key+" clips left",rect.left>=0);assertTrue(key+" clips right",rect.right<=width);
