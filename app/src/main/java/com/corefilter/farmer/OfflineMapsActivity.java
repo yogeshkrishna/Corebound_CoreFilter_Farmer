@@ -27,7 +27,9 @@ public final class OfflineMapsActivity extends Activity {
     @Override public void onResume(){super.onResume();handler.post(refresh);}
     @Override public void onPause(){handler.removeCallbacks(refresh);super.onPause();}
     @Override public void onDestroy(){images.shutdown();super.onDestroy();}
-    private void home(){ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(Ui.BG);LinearLayout list=Ui.column(this);int pad=Ui.dp(this,20);list.setPadding(pad,pad,pad,pad);scroll.addView(list);setContentView(scroll);
+    private void home(){FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Ui.BG);getWindow().setDecorFitsSystemWindows(false);
+        root.setOnApplyWindowInsetsListener((view,insets)->{Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
+        ScrollView scroll=new ScrollView(this);LinearLayout list=Ui.column(this);int pad=Ui.dp(this,20);list.setPadding(pad,pad,pad,pad);scroll.addView(list);root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);root.requestApplyInsets();
         list.addView(Ui.text(this,"ON THIS PHONE / OFFLINE",11,Ui.MINT));TextView title=Ui.text(this,"Your recorded maps",26,Ui.INK);title.setTypeface(null,Typeface.BOLD);list.addView(title);
         list.addView(Ui.text(this,"Stop recording, then Build. Processing can continue while you use other apps. Pause and resume whenever needed. No Wi-Fi or laptop required.",14,Ui.MUTED));
         list.addView(Ui.secondaryButton(this,"Pause processing",()->OfflineMapService.pause(this)));
@@ -49,21 +51,22 @@ public final class OfflineMapsActivity extends Activity {
         Button preview=previews.get(f.getName());if(preview!=null)preview.setEnabled(new File(f,"map.json").isFile()&&!OfflineMapService.active());
     }catch(Exception ignored){}}
     private void build(File f){if(LiveCaptureService.active()||LiveCaptureService.finishing()||OfflineMapService.active()){Toast.makeText(this,"Stop recording or pause the current job first",Toast.LENGTH_LONG).show();return;}
-        startForegroundService(new Intent(this,OfflineMapService.class).putExtra("recording",f.getName()));refreshStatuses();}
+        try{startForegroundService(new Intent(this,OfflineMapService.class).putExtra("recording",f.getName()));refreshStatuses();}catch(RuntimeException e){error(e);}}
     private void sections(File f){try{JSONObject map=RecordingStore.read(new File(f,"map.json"));JSONArray sections=map.getJSONArray("sections");String[] labels=new String[sections.length()];
         for(int i=0;i<labels.length;i++){JSONObject s=sections.getJSONObject(i);JSONArray b=s.optJSONArray("bounds");labels[i]="Section "+(i+1)+(b==null?" · no pixels":" · "+(b.getInt(2)-b.getInt(0))+" × "+(b.getInt(3)-b.getInt(1))+" pixels");}
         new AlertDialog.Builder(this).setTitle(labels.length>1?"Separate sections · uncertain joins":"Your native map").setItems(labels,(d,which)->preview(f,which)).setNegativeButton("Close",null).show();
     }catch(Exception e){error(e);}}
     private void preview(File f,int section){LinearLayout body=Ui.column(this);int pad=Ui.dp(this,16);body.setPadding(pad,pad,pad,pad);body.setBackgroundColor(Ui.BG);
         body.addView(Ui.text(this,"Drag to pan · pinch to zoom. This display preview is fitted; PNG export keeps every original pixel. Transparent areas were not observed.",13,Ui.MUTED));
-        MapPreview view=new MapPreview(this);body.addView(view,new LinearLayout.LayoutParams(-1,Ui.dp(this,350)));
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Section "+(section+1)).setView(body).setPositiveButton("Save native PNG",(d,w)->export(f,section)).setNegativeButton("Close",null).create();dialog.setOnDismissListener(d->view.dispose());dialog.show();
+        MapPreview view=new MapPreview(this);int height=Math.max(Ui.dp(this,80),Math.min(Ui.dp(this,350),getResources().getDisplayMetrics().heightPixels-Ui.dp(this,190)));body.addView(view,new LinearLayout.LayoutParams(-1,height));
+        ScrollView scroll=new ScrollView(this);scroll.addView(body);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Section "+(section+1)).setView(scroll).setPositiveButton("Save native PNG",(d,w)->export(f,section)).setNegativeButton("Close",null).create();dialog.setOnDismissListener(d->view.dispose());dialog.show();
         images.execute(()->{Bitmap bitmap=BitmapFactory.decodeFile(new File(f,"map-v1/preview-"+section+".png").getPath());handler.post(()->{if(dialog.isShowing())view.image(bitmap);else if(bitmap!=null)bitmap.recycle();});});}
     private void export(File f,int section){if(OfflineMapService.active()){Toast.makeText(this,"Pause the current job first",Toast.LENGTH_LONG).show();return;}exportRecording=f.getName();exportSection=section;
         Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/png").putExtra(Intent.EXTRA_TITLE,"Ceiling-Scout-"+f.getName()+"-section-"+(section+1)+".png");startActivityForResult(i,91);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=91||result!=RESULT_OK||data==null||exportRecording==null)return;
         Uri uri=data.getData();if(uri==null)return;try{getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_WRITE_URI_PERMISSION);}catch(SecurityException ignored){}
-        startForegroundService(new Intent(this,OfflineMapService.class).setAction("export").putExtra("recording",exportRecording).putExtra("section",exportSection).putExtra("destination",uri.toString()));}
+        try{startForegroundService(new Intent(this,OfflineMapService.class).setAction("export").putExtra("recording",exportRecording).putExtra("section",exportSection).putExtra("destination",uri.toString()));}catch(RuntimeException e){error(e);}}
     private void share(File f){if(LiveCaptureService.active()||OfflineMapService.active()){Toast.makeText(this,"Stop recording and pause processing before sharing",Toast.LENGTH_LONG).show();return;}
         new AlertDialog.Builder(this).setTitle("Share original recording").setMessage("This includes original game PNGs, capture metadata and alignment data. It can be large. Choose where to send it after the ZIP is prepared.")
                 .setPositiveButton("Prepare ZIP",(d,w)->{Toast.makeText(this,"Preparing recording…",Toast.LENGTH_SHORT).show();images.execute(()->{try{File zip=new File(getCacheDir(),"recording-"+f.getName()+".zip");

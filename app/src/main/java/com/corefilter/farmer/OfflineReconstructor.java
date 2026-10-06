@@ -93,7 +93,7 @@ final class OfflineReconstructor implements AutoCloseable {
         // Look across the full recording, including future frames. Global joins require
         // agreement with continuity, or two independent observations for disconnected pieces.
         for(int i=globalStart;i<nodes.size();i++){check();progress.update("Checking revisits across the run",i,nodes.size());if(!usable[i]||i%4!=0)continue;
-            final int query=i;List<Integer> candidates=new ArrayList<>();for(int j=0;j<nodes.size();j++)if(usable[j]&&Math.abs(i-j)>20&&nodes.get(j).segment==nodes.get(i).segment&&nodes.get(j).width==nodes.get(i).width&&nodes.get(j).height==nodes.get(i).height)candidates.add(j);
+            final int query=i;List<Integer> candidates=new ArrayList<>();for(int j=0;j<nodes.size();j++)if(usable[j]&&j!=i&&(Math.abs(i-j)>20||nodes.get(j).segment!=nodes.get(i).segment)&&nodes.get(j).width==nodes.get(i).width&&nodes.get(j).height==nodes.get(i).height)candidates.add(j);
             candidates.sort((a,b)->Double.compare(similarity(nodes.get(query).signature,nodes.get(b).signature),similarity(nodes.get(query).signature,nodes.get(a).signature)));
             List<Match> matches=new ArrayList<>();for(int k=0;k<Math.min(10,candidates.size());k++){Match m=match(candidates.get(k),i);if(m!=null)matches.add(m);}matches.sort((a,b)->Integer.compare(b.count,a.count));
             for(Match m:matches){TranslationGraph.Pose a=preliminary[m.a],b=preliminary[i];double ox=a.x+m.dx-b.x,oy=a.y+m.dy-b.y;

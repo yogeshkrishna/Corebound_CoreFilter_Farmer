@@ -7,6 +7,7 @@ import org.json.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.security.*;
 import java.util.*;
 
 /** Each frame commits pixels first, then metadata. Incomplete writes are never inputs. */
@@ -28,9 +29,11 @@ final class RecordingStore {
         if(f.getUsableSpace()<256L*1024*1024) throw new IOException("Storage nearly full. Recording stopped; saved images are safe.");
         String name=String.format(Locale.ROOT,"%08d",number); File png=new File(f,"frames/"+name+".png");
         AtomicFile atom=new AtomicFile(png); FileOutputStream stream=atom.startWrite();
-        try { if(!image.compress(Bitmap.CompressFormat.PNG,100,stream))throw new IOException("Could not save PNG"); atom.finishWrite(stream); }
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");
+        try { if(!image.compress(Bitmap.CompressFormat.PNG,100,new DigestOutputStream(stream,digest)))throw new IOException("Could not save PNG"); atom.finishWrite(stream); }
         catch(Exception e){atom.failWrite(stream);throw e;}
-        meta.put("file",name+".png").put("bytes",png.length());
+        StringBuilder hash=new StringBuilder();for(byte value:digest.digest())hash.append(String.format(Locale.ROOT,"%02x",value&255));
+        meta.put("file",name+".png").put("bytes",png.length()).put("sha256",hash.toString());
         write(new File(f,"frames/"+name+".json"),meta);
         JSONObject record=read(new File(f,"recording.json"));
         record.put("frames",record.optInt("frames")+1).put("bytes",record.optLong("bytes")+png.length());
