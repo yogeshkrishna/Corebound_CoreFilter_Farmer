@@ -24,9 +24,11 @@ public final class OfflineMapService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         if(intent==null){stopSelf();return START_NOT_STICKY;}if("pause".equals(intent.getAction())){cancelled=true;return START_NOT_STICKY;}if(instance!=null)return START_NOT_STICKY;
         instance=this;recordingId=intent.getStringExtra("recording");
-        NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("offline-map","Offline map processing",NotificationManager.IMPORTANCE_LOW));
-        startForeground(NOTICE,notification("Preparing saved images"),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"CeilingScout:OfflineMap");wake.acquire(6L*60*60*1000);
+        try{NotificationManager nm=getSystemService(NotificationManager.class);nm.createNotificationChannel(new NotificationChannel("offline-map","Offline map processing",NotificationManager.IMPORTANCE_LOW));
+            startForeground(NOTICE,notification("Preparing saved images"),ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            wake=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"CeilingScout:OfflineMap");wake.acquire(6L*60*60*1000);
+        }catch(RuntimeException e){status="Android could not start background processing. Saved images are safe. Retry from this screen later. "+e.getMessage();
+            try{RecordingStore.update(RecordingStore.directory(this,recordingId),"export".equals(intent.getAction())?"complete":"paused",status);}catch(Exception ignored){}stopSelf();return START_NOT_STICKY;}
         worker.execute(()->run(intent));return START_NOT_STICKY;
     }
     private Notification notification(String message){

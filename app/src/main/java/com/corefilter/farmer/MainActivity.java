@@ -113,7 +113,7 @@ public final class MainActivity extends Activity {
         primary.setText(connected?"Show floating bar":"Enable controls");
         if(modeSummary!=null)modeSummary.setText(getSharedPreferences("mode",0).getBoolean("manualMapping",false)?"Selected: Offline mapper · Record / Stop":"Selected: Farmer · Run / Pause");
         if(liveSummary!=null){String link=getSharedPreferences("live",0).getString("endpoint","");try{liveSummary.setText(LiveCaptureService.active()?LiveCaptureService.statusLine():"Paired: "+LiveEndpoint.parse(link).base);}catch(IllegalArgumentException e){liveSummary.setText("No laptop paired yet");}}
-        if(offlineSummary!=null){String text="Ready to record. Your original images are kept until you remove the app.";
+        if(offlineSummary!=null){String text="Ready to record. Your original images stay saved until you choose Delete this recording.";
             if(LiveCaptureService.active())text=LiveCaptureService.statusLine();else if(LiveCaptureService.finishing())text="Finishing the last saved image…";else if(OfflineMapService.active())text=OfflineMapService.statusLine();
             else try{java.io.File f=RecordingStore.directory(this,getSharedPreferences("offline",0).getString("latest",""));org.json.JSONObject r=RecordingStore.read(new java.io.File(f,"recording.json"));text=r.optInt("frames")+" images saved · "+r.optString("message");}catch(Exception ignored){}
             offlineSummary.setText(text);}

@@ -21,6 +21,7 @@ Uncertain joins stay separate. Unseen areas stay transparent.
 Processing time depends on the recording and your phone; it can be substantial.
 Original recordings stay on this phone. Do not clear app storage or uninstall.
 Share original recording lets you send a ZIP of the evidence when needed.
+After exporting, Delete this recording can free space; it asks before deleting.
 
 OPTIONAL LAPTOP
 Studio remains optional for live mapping. Use Connect laptop and Start live capture

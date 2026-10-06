@@ -1,0 +1,9 @@
+# Verification for 0.6.0
+
+The native mapper ran successfully on an Android 15 x86_64 emulator using the packaged OpenCV 4.12.0 library: [Android device run](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/runs/37408428110), mapper revision `96c51f6`.
+
+The fixture records six 1600 × 900 native views of known 2240 × 1220 scenery, moving forward, dropping vertically and reversing. It interrupts rendering after two inputs, reopens from disk, resumes, verifies one connected section with all six views and the expected native dimensions, and compares opaque exported pixels against source scenery on a three-pixel grid. The first fixture used movement buttons with noisy interiors; those were corrected to the game's dark controls after it exposed rejected non-gameplay views.
+
+Local verification: 182 Android/JVM tests pass; PNG chunk CRCs and all pixels in a controlled 1601 × 211 RGBA export are checked, including transparent pixels. Graph checks cover reversals, drops, disconnected sections, contradictory loop matches and small-error refinement. Recording tests cover native dimensions, committed metadata, interrupted image pairs and path validation. Android build and lint pass. Existing recorded-vision checks: 183; navigation replay checks: 22. Original signing certificate verified unchanged.
+
+Final UI refinements, recording deletion controls and background-start failure handling are covered by the local build/lint and existing Android UI checks; the native algorithm above is unchanged from the successful device run. The integration fixture does not cover real Corebound scenery, phone-specific capture delivery, game parallax, every possible interruption or vendor background restrictions. A real phone recording still needs a coverage/alignment check. It does not establish error-free mapping or farming.

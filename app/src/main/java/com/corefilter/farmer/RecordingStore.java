@@ -57,6 +57,15 @@ final class RecordingStore {
         if(files!=null)for(File f:files)if(new File(f,"recording.json").isFile())result.add(f);
         result.sort((a,b)->b.getName().compareTo(a.getName()));return result;
     }
+    static void delete(Context c,String id)throws IOException{
+        File f=directory(c,id);String boundary=f.getCanonicalPath()+File.separator;removeChildren(f,boundary);
+        if(!f.delete())throw new IOException("Could not remove recording folder");
+        File zip=new File(c.getCacheDir(),"recording-"+id+".zip");if(zip.isFile()&&!zip.delete())throw new IOException("Recording removed; its shared ZIP could not be cleared");
+    }
+    private static void removeChildren(File folder,String boundary)throws IOException{
+        File[] files=folder.listFiles();if(files==null)throw new IOException("Cannot read recording folder");
+        for(File file:files){if(!file.getCanonicalPath().startsWith(boundary))throw new IOException("Unexpected path in recording");if(file.isDirectory())removeChildren(file,boundary);if(!file.delete())throw new IOException("Cannot remove "+file.getName());}
+    }
     static JSONObject read(File file) throws Exception {
         try(InputStream in=new FileInputStream(file);ByteArrayOutputStream data=new ByteArrayOutputStream()){byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1)data.write(buffer,0,n);return new JSONObject(data.toString(StandardCharsets.UTF_8.name()));}
     }
