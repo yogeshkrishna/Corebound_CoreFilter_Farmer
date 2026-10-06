@@ -2,11 +2,11 @@
 
 Extract the ZIP, then double-click **Start Studio.cmd** on Windows. The first launch downloads the image tools. Python 3.12 or newer must be installed; the developer's laptop can also use its bundled Python. Leave the app running while you play.
 
-Connect the phone and laptop to the same Wi-Fi. Install Ceiling Scout 0.5.0, enable its controls, choose **Live laptop map**, and scan the displayed QR or paste the connection link. Press **Start live capture**, accept Android's screen-sharing prompt, then play Corebound manually. The floating bar stops capture. Farming remains a separate choice.
+Connect the phone and laptop to the same Wi-Fi. Install Ceiling Scout 0.6.0 or newer, enable its controls, open **Optional · live laptop connection**, and scan the displayed QR or paste the connection link. Press **Start live capture**, accept Android's screen-sharing prompt, then play Corebound manually. The floating bar stops capture. Farming remains a separate choice.
 
 The stable link pairs this phone with this laptop. It survives app switches and laptop restarts. The IP portion may change if your router gives the laptop a new address; copy the newly displayed link in that case. Keep the key private. This local service accepts only paired uploads, but uses HTTP on your trusted Wi-Fi.
 
-Images are lossless PNGs at the phone's native landscape resolution, with the toolbar masked. The laptop retains every acknowledged image, capture time, device/orientation, mask rectangles, skipped upload count, SHA-256 checksum and registration result. Nothing is recorded on the phone. Data lives in **Documents\Ceiling Scout Live**. Earlier Ceiling Scout map archives are never read.
+Images are lossless PNGs at the phone's native landscape resolution, with the toolbar masked. The laptop retains every acknowledged image, capture time, device/orientation, mask rectangles, skipped upload count, SHA-256 checksum and registration result. This live-streaming mode does not save phone recordings. The separate offline mapper in Ceiling Scout 0.6.0 records and processes on the phone without Studio. Data lives in **Documents\Ceiling Scout Live**. Earlier Ceiling Scout map archives are never read.
 
 The live map estimates translation from static features. It never stretches images. A join must have enough spatially distributed agreeing matches and no conflicting candidate. A failed join becomes a separate section; a menu or a frame without useful detail remains raw evidence. Unseen and masked areas stay transparent. Move through high ceilings manually and revisit gaps. Sparse, repetitive, obscured terrain can still defeat registration: native pixel scale does not guarantee a complete or perfectly registered level.
 
