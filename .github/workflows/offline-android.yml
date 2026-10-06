@@ -32,7 +32,7 @@ jobs:
           target: google_apis
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest --no-daemon --console=plain
+          script: ./gradlew connectedDebugAndroidTest -PscoutEmulator --no-daemon --console=plain
       - name: Keep device test results
         if: always()
         uses: actions/upload-artifact@v6

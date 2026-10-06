@@ -11,10 +11,15 @@ android {
         applicationId 'com.corefilter.farmer'
         minSdk 30
         targetSdk 35
-        versionCode 13
-        versionName '0.6.0'
+        versionCode 14
+        versionName '0.6.1'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        ndk { abiFilters 'arm64-v8a', 'x86_64' }
+        // Phone updates need only ARM64. Include the large emulator libraries
+        // explicitly for native device tests, never in the published phone APK.
+        ndk {
+            abiFilters 'arm64-v8a'
+            if (project.hasProperty('scoutEmulator')) abiFilters 'x86_64'
+        }
     }
 
     compileOptions {

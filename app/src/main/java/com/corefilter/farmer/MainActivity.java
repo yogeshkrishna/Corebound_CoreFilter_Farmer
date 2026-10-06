@@ -39,7 +39,7 @@ public final class MainActivity extends Activity {
         if(getIntent().getData()!=null){String link=getIntent().getData().getQueryParameter("link");getIntent().setData(null);if(link!=null)pairLaptop(link);}
         if(getIntent().getBooleanExtra("startLive",false)){getIntent().removeExtra("startLive");if(getSharedPreferences("mode",0).getBoolean("laptopCapture",false))startLive();else startOffline();}
     }
-    @Override public void onPause(){statusHandler.removeCallbacks(statusRefresh);super.onPause();}
+    @Override public void onPause(){UpdateManager.onPause(this);statusHandler.removeCallbacks(statusRefresh);super.onPause();}
     @Override protected void onSaveInstanceState(Bundle b){super.onSaveInstanceState(b);b.putBoolean("pendingOffline",pendingOffline);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);}
 

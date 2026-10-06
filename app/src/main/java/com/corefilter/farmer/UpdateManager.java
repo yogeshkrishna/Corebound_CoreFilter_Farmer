@@ -23,10 +23,14 @@ public final class UpdateManager {
     private static final ExecutorService WORKER=Executors.newSingleThreadExecutor();
     private static final Handler MAIN=new Handler(Looper.getMainLooper());
     private static final AtomicBoolean BUSY=new AtomicBoolean();
+    private static final ExecutorService INTERRUPTS=Executors.newCachedThreadPool();
+    private static volatile Operation active;
+    private static Operation pending;
     private UpdateManager(){}
 
     public static void show(Activity activity){
-        if(BUSY.get()){Toast.makeText(activity,"An update check or download is already running.",Toast.LENGTH_SHORT).show();return;}
+        if(BUSY.get()){Operation op=active;if(op!=null)op.attach(activity);return;}
+        if(pending!=null){Operation done=pending;pending=null;done.deliver(activity);return;}
         String repo=prefs(activity).getString("repository",DEFAULT_REPO);
         if("yogeshkrishna/ceiling-scout".equalsIgnoreCase(repo)){repo=DEFAULT_REPO;prefs(activity).edit().putString("repository",repo).apply();}
         check(activity,repo);
@@ -43,12 +47,15 @@ public final class UpdateManager {
         }));dialog.show();
     }
     public static void onResume(Activity activity){
+        if(active!=null&&BUSY.get())active.attach(activity);
+        else if(pending!=null){Operation done=pending;pending=null;done.deliver(activity);}
         SharedPreferences settings=prefs(activity);long waiting=settings.getLong("permissionWaitUntil",0);
         if(waiting==0)return;settings.edit().remove("permissionWaitUntil").apply();
         if(waiting<System.currentTimeMillis())return;
         if(activity.getPackageManager().canRequestPackageInstalls())install(activity);
         else Toast.makeText(activity,"Allow updates from Ceiling Scout, then check for updates again.",Toast.LENGTH_LONG).show();
     }
+    public static void onPause(Activity activity){Operation op=active;if(op!=null)op.detach(activity);}
     private static SharedPreferences prefs(Context context){return context.getSharedPreferences(PREFS,Context.MODE_PRIVATE);}
     private static File candidate(Context context){return new File(new File(context.getFilesDir(),"updates"),"update.apk");}
     private static void pauseFarmer(){if(FarmerService.instance!=null)FarmerService.instance.pause("Checking app update");}
@@ -71,30 +78,44 @@ public final class UpdateManager {
         });
     }
     private static void download(Activity activity,ReleasePolicy.Release release){
-        if(!BUSY.compareAndSet(false,true))return;Operation op=new Operation(activity,"Downloading "+release.tag+"…");
+        if(!BUSY.compareAndSet(false,true))return;Operation op=new Operation(activity,"Downloading "+release.tag+"…");op.downloading=true;
+        Context context=activity.getApplicationContext();
+        try{context.startForegroundService(new Intent(context,UpdateDownloadService.class));}
+        catch(RuntimeException ex){op.error(new IOException("Android could not start the update download. Please retry with Ceiling Scout open.",ex));op.finish();return;}
         WORKER.execute(()->{
-            File part=new File(candidate(activity).getParentFile(),"update.apk.part");
+            op.thread=Thread.currentThread();
+            File part=new File(candidate(context).getParentFile(),"update.apk.part");
             try{
                 File directory=part.getParentFile();if(!directory.isDirectory()&&!directory.mkdirs())throw new IOException("Cannot prepare the app’s update folder.");
                 String expected=release.hash.isEmpty()?ReleasePolicy.checksum(readText(release.checksumUrl,65536,op),release.apkName):release.hash;
-                MessageDigest digest=MessageDigest.getInstance("SHA-256");long received=0;long lastProgress=0;
-                HttpURLConnection connection=open(release.apkUrl,op);
-                try(InputStream input=connection.getInputStream();OutputStream output=new FileOutputStream(part)){
-                    byte[] buffer=new byte[32768];int read;
-                    while((read=input.read(buffer))!=-1){op.requireActive();received+=read;if(received>ReleasePolicy.MAX_APK_BYTES||received>release.bytes)throw new IOException("The download is larger than its release metadata.");output.write(buffer,0,read);digest.update(buffer,0,read);
-                        long now=SystemClock.elapsedRealtime();if(now-lastProgress>250){lastProgress=now;int percent=(int)(received*100/release.bytes);op.progress("Downloading "+release.tag+" · "+percent+"%");}
-                    }
-                    output.flush();
-                }finally{connection.disconnect();}
-                if(received!=release.bytes)throw new IOException("The APK download was incomplete. Check your connection and retry.");
-                if(!hex(digest.digest()).equals(expected))throw new IOException("The APK checksum did not match. Nothing was installed.");
-                validateArchive(activity,part);
-                op.requireActive();File ready=candidate(activity);
+                File prepared=candidate(context);
+                if(prepared.isFile()&&prepared.length()==release.bytes&&sha256(prepared).equals(expected)){
+                    op.requireActive();validateArchive(context,prepared);
+                    prefs(context).edit().putString("preparedHash",expected).putLong("preparedAt",System.currentTimeMillis()).apply();
+                    op.ui(UpdateManager::requestInstall);return;
+                }
+                String identity=release.apkUrl+"\n"+expected+"\n"+release.bytes;
+                SharedPreferences settings=prefs(context);
+                if(!identity.equals(settings.getString("partialIdentity",""))){
+                    if(part.exists()&&!part.delete())throw new IOException("Cannot reset the previous partial update.");
+                    if(!settings.edit().putString("partialIdentity",identity).commit())throw new IOException("Cannot save download resume information.");
+                }
+                ResumableDownload.fetch(part,release.bytes,offset->open(release.apkUrl,op,offset),op);
+                op.requireActive();op.progress("Download complete · verifying APK…");
+                if(!sha256(part).equals(expected)){
+                    if(!part.delete())throw new IOException("The APK checksum did not match. Cannot reset this download.");
+                    throw new IOException("The APK checksum did not match. Nothing was installed. Retry to download a fresh copy.");
+                }
+                validateArchive(context,part);
+                op.requireActive();File ready=candidate(context);
                 if(ready.exists()&&!ready.delete())throw new IOException("Cannot replace the previous update download.");
                 if(!part.renameTo(ready))throw new IOException("Cannot save the verified update.");
-                prefs(activity).edit().putString("preparedHash",expected).putLong("preparedAt",System.currentTimeMillis()).apply();
+                prefs(context).edit().remove("partialIdentity").putString("preparedHash",expected).putLong("preparedAt",System.currentTimeMillis()).apply();
                 op.ui(UpdateManager::requestInstall);
-            }catch(Exception ex){op.error(ex);}finally{if(part.exists())part.delete();op.finish();}
+            }catch(Exception ex){op.ui(a->new AlertDialog.Builder(a).setTitle("Download paused")
+                    .setMessage((ex.getMessage()==null?"The connection interrupted the update.":ex.getMessage())+"\n\nSaved download progress will be reused for this version.")
+                    .setPositiveButton("Retry",(d,w)->download(a,release)).setNegativeButton("Later",null).show());}
+            finally{op.thread=null;Thread.interrupted();op.finish();}
         });
     }
     private static void requestInstall(Activity activity){
@@ -144,17 +165,26 @@ public final class UpdateManager {
         return result;
     }
     static String sha256(File file)throws Exception{
-        MessageDigest digest=MessageDigest.getInstance("SHA-256");try(InputStream input=new FileInputStream(file)){byte[] bytes=new byte[32768];int count;while((count=input.read(bytes))!=-1)digest.update(bytes,0,count);}return hex(digest.digest());
+        MessageDigest digest=MessageDigest.getInstance("SHA-256");try(InputStream input=new BufferedInputStream(new FileInputStream(file),131072)){byte[] bytes=new byte[131072];int count;while((count=input.read(bytes))!=-1)digest.update(bytes,0,count);}return hex(digest.digest());
     }
     private static String hex(byte[] bytes){StringBuilder out=new StringBuilder(bytes.length*2);for(byte b:bytes)out.append(String.format(Locale.ROOT,"%02x",b&255));return out.toString();}
     private static HttpURLConnection open(String url,Operation op)throws Exception{
+        return open(url,op,-1);
+    }
+    private static HttpURLConnection open(String url,Operation op,long offset)throws Exception{
         URI uri=new URI(url);
         for(int redirect=0;redirect<=5;redirect++){
             op.requireActive();if(!ReleasePolicy.allowedNetworkUrl(uri))throw new IOException("The update link left GitHub’s secure download hosts.");
-            HttpURLConnection connection=(HttpURLConnection)uri.toURL().openConnection();connection.setConnectTimeout(15000);connection.setReadTimeout(20000);connection.setInstanceFollowRedirects(false);
-            connection.setRequestProperty("User-Agent","Ceiling-Scout-Android");connection.setRequestProperty("Accept","application/vnd.github+json");connection.setRequestProperty("X-GitHub-Api-Version","2022-11-28");
-            int status=connection.getResponseCode();
+            HttpURLConnection connection=(HttpURLConnection)uri.toURL().openConnection();connection.setConnectTimeout(12000);connection.setReadTimeout(12000);connection.setInstanceFollowRedirects(false);
+            connection.setRequestProperty("User-Agent","Ceiling-Scout-Android");connection.setRequestProperty("Accept-Encoding","identity");
+            if(offset>0)connection.setRequestProperty("Range","bytes="+offset+"-");
+            if("api.github.com".equals(uri.getHost())){connection.setRequestProperty("Accept","application/vnd.github+json");connection.setRequestProperty("X-GitHub-Api-Version","2022-11-28");}
+            op.connection=connection;
+            int status;
+            try{op.requireActive();status=connection.getResponseCode();op.requireActive();}
+            catch(Exception ex){connection.disconnect();throw ex;}
             if(status>=300&&status<400){String location=connection.getHeaderField("Location");connection.disconnect();if(location==null)throw new IOException("GitHub returned an empty redirect.");uri=uri.resolve(location);continue;}
+            if(offset>=0)return connection; // The downloader handles ranges and retryable status codes.
             if(status!=200){connection.disconnect();if(status==404)throw new IOException("No published release was found. Check the repository name or publish its first release.");if(status==403||status==429)throw new IOException("GitHub is limiting update checks. Try again later.");throw new IOException("GitHub update request failed ("+status+").");}
             return connection;
         }
@@ -168,13 +198,33 @@ public final class UpdateManager {
     }
     private static void errorDialog(Activity activity,String message){new AlertDialog.Builder(activity).setTitle("Update not installed").setMessage(message).setPositiveButton("Done",null).setNeutralButton("Update source",(d,w)->configure(activity)).show();}
     private interface UiAction{void run(Activity activity);}
-    private static final class Operation{
-        final WeakReference<Activity> activity;final AlertDialog dialog;final TextView label;final AtomicBoolean canceled=new AtomicBoolean();private UiAction result;
-        Operation(Activity owner,String message){activity=new WeakReference<>(owner);LinearLayout body=Ui.column(owner);int p=Ui.dp(owner,22);body.setPadding(p,p,p,p);label=Ui.text(owner,message,14,Ui.INK);body.addView(label);ProgressBar progress=new ProgressBar(owner);body.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(owner,48)));dialog=new AlertDialog.Builder(owner).setTitle("Ceiling Scout update").setView(body).setNegativeButton("Cancel",(d,w)->canceled.set(true)).setCancelable(false).create();dialog.show();}
-        void requireActive()throws InterruptedIOException{if(canceled.get()||Thread.currentThread().isInterrupted())throw new InterruptedIOException("Update canceled.");}
-        void progress(String message){MAIN.post(()->{if(!canceled.get()&&dialog.isShowing())label.setText(message);});}
+    static String downloadStatus(){Operation op=active;return op!=null&&op.downloading?op.message:null;}
+    static void cancelDownload(){Operation op=active;if(op!=null&&op.downloading)op.cancel();}
+    static void failDownload(String message){Operation op=active;if(op!=null&&op.downloading){op.failure=message;op.interrupt();}}
+    private static final class Operation implements ResumableDownload.Monitor{
+        final Context context;WeakReference<Activity> activity=new WeakReference<>(null);AlertDialog dialog;TextView label;
+        final AtomicBoolean canceled=new AtomicBoolean();private UiAction result;volatile String message;
+        volatile HttpURLConnection connection;volatile Thread thread;volatile String failure;boolean downloading;
+        Operation(Activity owner,String text){context=owner.getApplicationContext();message=text;active=this;attach(owner);}
+        void attach(Activity owner){
+            if(owner.isFinishing()||owner.isDestroyed())return;
+            if(activity.get()==owner&&dialog!=null&&dialog.isShowing())return;
+            if(dialog!=null)try{dialog.dismiss();}catch(RuntimeException ignored){}
+            activity=new WeakReference<>(owner);LinearLayout body=Ui.column(owner);int p=Ui.dp(owner,22);body.setPadding(p,p,p,p);label=Ui.text(owner,message,14,Ui.INK);body.addView(label);ProgressBar progress=new ProgressBar(owner);body.addView(progress,new LinearLayout.LayoutParams(-1,Ui.dp(owner,48)));
+            dialog=new AlertDialog.Builder(owner).setTitle("Ceiling Scout update").setView(body).setNegativeButton("Cancel",(d,w)->cancel()).setCancelable(false).create();dialog.show();
+        }
+        void detach(Activity owner){if(activity.get()!=owner)return;if(dialog!=null)try{dialog.dismiss();}catch(RuntimeException ignored){}dialog=null;label=null;activity=new WeakReference<>(null);}
+        void cancel(){canceled.set(true);message="Canceling · downloaded progress is saved";interrupt();}
+        void interrupt(){Thread running=thread;if(running!=null)running.interrupt();HttpURLConnection socket=connection;if(socket!=null)INTERRUPTS.execute(socket::disconnect);}
+        @Override public void check()throws InterruptedIOException{requireActive();}
+        void requireActive()throws InterruptedIOException{if(failure!=null)throw new InterruptedIOException(failure);if(canceled.get()||Thread.currentThread().isInterrupted())throw new InterruptedIOException("Update canceled.");}
+        @Override public void progress(String text){message=text;MAIN.post(()->{if(!canceled.get()&&dialog!=null&&dialog.isShowing())label.setText(text);});}
         void ui(UiAction action){result=action;}
         void error(Exception exception){ui(a->errorDialog(a,exception.getMessage()==null?"Could not complete the update. Check your connection and retry.":exception.getMessage()));}
-        void finish(){MAIN.post(()->{BUSY.set(false);Activity owner=activity.get();if(owner!=null&&!owner.isDestroyed()&&dialog.isShowing())dialog.dismiss();if(!canceled.get()&&result!=null&&owner!=null&&!owner.isFinishing()&&!owner.isDestroyed())result.run(owner);});}
+        void deliver(Activity owner){if(!canceled.get()&&result!=null&&!owner.isFinishing()&&!owner.isDestroyed())result.run(owner);}
+        void finish(){MAIN.post(()->{if(active==this){active=null;BUSY.set(false);}Activity owner=activity.get();if(dialog!=null)try{dialog.dismiss();}catch(RuntimeException ignored){}dialog=null;label=null;
+            if(downloading)context.stopService(new Intent(context,UpdateDownloadService.class));
+            if(!canceled.get()&&result!=null){if(owner!=null&&!owner.isFinishing()&&!owner.isDestroyed())deliver(owner);else pending=this;}
+        });}
     }
 }

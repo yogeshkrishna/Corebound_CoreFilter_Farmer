@@ -18,7 +18,7 @@ Original PNGs, capture metadata, cached features, camera constraints/positions a
 
 Batch analysis first tracks adjacent views, then checks revisits against the whole recording and refines translation constraints. It never scales or rotates map pixels. Terrain is assembled in bounded 512 × 512 tiles; PNG export streams rows, avoiding a full-map bitmap. The preview may be reduced to 2048 pixels on its longest side. Weak or conflicting joins stay in separate sections. Missing observations remain transparent. Native scale does not guarantee full coverage or perfect registration, and extra processing cannot recover unseen ceilings. The real phone/game still needs a trial.
 
-Android may interrupt long background jobs or the phone vendor may restrict them. Resume from Recorded maps; features, matching progress and completed tile frames are cached. Android 15 limits this foreground processing service to its daily time budget. The APK supports ARM64 and x86_64 Android 11+ devices.
+Android may interrupt long background jobs or the phone vendor may restrict them. Resume from Recorded maps; features, matching progress and completed tile frames are cached. Android 15 limits this foreground processing service to its daily time budget. The phone APK supports ARM64 Android 11+ devices. Native emulator tests include x86_64 with the explicit `-PscoutEmulator` build option.
 
 ## Optional live laptop mapping
 
@@ -34,7 +34,7 @@ The supplied build has **three Magmatic ★7+ Hookshots: seven jumps**. Edit equ
 
 ## Updates and development
 
-Use **Check for updates → Download & install**. Android still requires installation confirmation. The app verifies checksum, identity, version and original signing certificate. See [release instructions](docs/updates.md).
+Use **Check for updates → Download & install**. Downloads show MB and speed, reconnect with saved progress, and run in the background. Tap Check for updates again to reopen an active download. Android still requires installation confirmation. The app verifies checksum, identity, version and original signing certificate. If an older updater is stuck, force-stop the app and install the latest release APK over it once. See [release instructions](docs/updates.md).
 
 `tools\setup-toolchain.ps1` prepares the Android toolchain; `tools\build.ps1` builds the APK and runs Android/recorded-vision/navigation checks. Install `laptop/requirements.txt`, then run `python -m unittest discover -s laptop/tests -v` for Studio. `python laptop/package.py --output dist/Ceiling-Scout-Studio.zip` packages laptop source without keys or recordings.
 

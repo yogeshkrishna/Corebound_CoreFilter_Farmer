@@ -12,6 +12,7 @@
     <queries><package android:name="com.Overcurve.Corebound" /></queries>
     <application android:theme="@android:style/Theme.Material.NoActionBar" android:label="Ceiling Scout" android:icon="@drawable/ic_scout" android:allowBackup="false" android:supportsRtl="true" android:usesCleartextTraffic="true">
         <receiver android:name=".UpdateInstallReceiver" android:exported="false"/>
+        <service android:name=".UpdateDownloadService" android:exported="false" android:foregroundServiceType="dataSync"/>
         <service android:name=".LiveCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
         <service android:name=".OfflineMapService" android:exported="false" android:foregroundServiceType="dataSync"/>
         <activity android:name=".OfflineMapsActivity" android:exported="false"/>
