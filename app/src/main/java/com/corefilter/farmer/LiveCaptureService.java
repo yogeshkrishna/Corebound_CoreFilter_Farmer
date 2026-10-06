@@ -104,7 +104,7 @@ public final class LiveCaptureService extends Service {
             for(int y=0;y<image.getHeight();y+=rows){int count=Math.min(rows,image.getHeight()-y);decoder.decodeRows(y,count,stripPixels);nativeImage.setPixels(stripPixels,0,image.getWidth(),0,y,image.getWidth(),count);}
             main.post(()->{if(!closed&&FarmerService.instance==farmer)captureMask=farmer.overlayBounds();});
             Rect mask=new Rect(captureMask);if(!mask.intersect(0,0,nativeImage.getWidth(),nativeImage.getHeight()))mask.setEmpty();
-            if(!mask.isEmpty()){Paint paint=new Paint();paint.setColor(Color.BLACK);new Canvas(nativeImage).drawRect(mask,paint);}
+            if(!mask.isEmpty()){Paint paint=new Paint();paint.setColor(Color.BLACK);Canvas overlay=new Canvas(nativeImage);try{overlay.drawRect(mask,paint);}finally{overlay.setBitmap(null);}}
             JSONObject metadata=new JSONObject().put("schema",1).put("session",session).put("sequence",++sequence).put("captureElapsedMs",now).put("captureWallMs",System.currentTimeMillis()).put("imageTimestampNs",image.getTimestamp()).put("width",nativeImage.getWidth()).put("height",nativeImage.getHeight()).put("rotation",farmer.displayRotation()).put("package",FarmerService.GAME).put("device",Build.MANUFACTURER+" "+Build.MODEL).put("android",Build.VERSION.SDK_INT).put("appVersion",appVersion).put("format","png").put("capture","mediaProjection").put("resized",false).put("skippedBeforeUpload",skipped).put("farmerStatus",farmer.statusLine());
             JSONArray masks=new JSONArray();if(!mask.isEmpty())masks.put(new JSONArray(new int[]{mask.left,mask.top,mask.right,mask.bottom}));metadata.put("occlusions",masks);
             metadata.put("build",build);
