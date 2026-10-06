@@ -7,15 +7,23 @@ import java.util.zip.*;
 /** Streaming RGBA PNG: one row and one compressed chunk in memory, at native size. */
 public final class NativePngWriter {
     public interface Rows { void read(int y,int[] argb) throws IOException; }
-    public static void write(OutputStream output,int width,int height,Rows rows) throws IOException {
+    public static void validateDimensions(int width,int height)throws IOException {
         if(width<1||height<1||width>200000||height>200000)throw new IOException("Invalid export dimensions");
+    }
+    public static void write(OutputStream output,int width,int height,Rows rows) throws IOException {
+        validateDimensions(width,height);
         DataOutputStream out=new DataOutputStream(output);out.write(new byte[]{(byte)137,80,78,71,13,10,26,10});
         ByteArrayOutputStream head=new ByteArrayOutputStream();DataOutputStream h=new DataOutputStream(head);
         h.writeInt(width);h.writeInt(height);h.write(new byte[]{8,6,0,0,0});chunk(out,"IHDR",head.toByteArray(),head.size());
         ChunkStream chunks=new ChunkStream(out);Deflater deflater=new Deflater(6);
         try {DeflaterOutputStream compressed=new DeflaterOutputStream(chunks,deflater,32768);
             int[] pixels=new int[width];byte[] row=new byte[1+width*4];
-            for(int y=0;y<height;y++){rows.read(y,pixels);row[0]=0;for(int x=0,k=1;x<width;x++){int p=pixels[x];row[k++]=(byte)(p>>16);row[k++]=(byte)(p>>8);row[k++]=(byte)p;row[k++]=(byte)(p>>>24);}compressed.write(row);}
+            // PNG's lossless Sub filter makes broad flat caves and adjacent scenery
+            // cheaper to compress without a second row allocation or resampling.
+            for(int y=0;y<height;y++){rows.read(y,pixels);row[0]=1;int previous=0;
+                for(int x=0,k=1;x<width;x++){int p=pixels[x];row[k++]=(byte)((p>>16)-(previous>>16));row[k++]=(byte)((p>>8)-(previous>>8));row[k++]=(byte)(p-previous);row[k++]=(byte)((p>>>24)-(previous>>>24));previous=p;}
+                compressed.write(row);
+            }
             compressed.finish();chunks.flush();chunk(out,"IEND",new byte[0],0);out.flush();
         }finally{deflater.end();}
     }

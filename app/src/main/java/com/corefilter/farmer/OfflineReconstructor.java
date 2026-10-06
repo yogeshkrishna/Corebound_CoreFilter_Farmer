@@ -16,20 +16,31 @@ import java.util.function.BooleanSupplier;
 
 /** Batch reconstruction from immutable native PNGs. Analysis is reduced; output never is. */
 final class OfflineReconstructor implements AutoCloseable {
+    private static final int CHECKPOINT_FRAMES=8;
     interface Progress { void update(String stage,int done,int total) throws Exception; }
     private final File recording,work;private final List<File> inputs;
     private final BooleanSupplier cancelled;private final Progress progress;
-    private final SIFT sift=SIFT.create(2200,3,.025,10,1.6);
+    private SIFT sift;
     private final LinkedHashMap<Integer,Feature> cache=new LinkedHashMap<>(12,.75f,true);
     private final List<Node> nodes=new ArrayList<>();
     private static final class Node {int width,height,segment;boolean usable;float[] signature;}
     private static final class Feature implements AutoCloseable {
         int width,height;double scale;boolean gameplay;Point[] points;float[] signature;
         Mat descriptors=new Mat();DescriptorMatcher matcher;
-        void prepare(){if(descriptors.empty())return;matcher=DescriptorMatcher.create(DescriptorMatcher.FLANNBASED);matcher.add(Collections.singletonList(descriptors));matcher.train();}
-        public void close(){if(matcher!=null)matcher.clear();descriptors.release();}
+        void prepare(){if(descriptors.empty()||matcher!=null)return;matcher=DescriptorMatcher.create(DescriptorMatcher.FLANNBASED);matcher.add(Collections.singletonList(descriptors));matcher.train();}
+        public void close(){if(matcher!=null){matcher.clear();matcher=null;}descriptors.release();}
     }
     private static final class Match {int a,b,count;double dx,dy,ratio;TranslationGraph.Edge edge(){return new TranslationGraph.Edge(a,b,dx,dy,Math.min(200,count)*ratio);}}
+    /** Same ordering as the old stable full sort, with only the best entries resident. */
+    static final class CandidatePool {
+        private static final class Candidate {final int index;final double score;Candidate(int index,double score){this.index=index;this.score=score;}}
+        private static final Comparator<Candidate> WORST_FIRST=(a,b)->{int c=Double.compare(a.score,b.score);return c!=0?c:Integer.compare(b.index,a.index);};
+        private final int limit;private final PriorityQueue<Candidate> selected;
+        CandidatePool(int limit){if(limit<1)throw new IllegalArgumentException("Candidate limit must be positive");this.limit=limit;selected=new PriorityQueue<>(limit,WORST_FIRST);}
+        void offer(int index,double score){Candidate worst=selected.peek();int rank=worst==null?1:Double.compare(score,worst.score);
+            if(selected.size()<limit||rank>0||rank==0&&index<worst.index){if(selected.size()==limit)selected.poll();selected.add(new Candidate(index,score));}}
+        int[] indices(){List<Candidate> sorted=new ArrayList<>(selected);sorted.sort(WORST_FIRST.reversed());int[] indices=new int[sorted.size()];for(int i=0;i<indices.length;i++)indices[i]=sorted.get(i).index;return indices;}
+    }
     OfflineReconstructor(File recording,BooleanSupplier cancelled,Progress progress)throws Exception{
         this.recording=recording;this.cancelled=cancelled;this.progress=progress;inputs=RecordingStore.frames(recording);work=new File(recording,"analysis-v1");
         if(!work.isDirectory()&&!work.mkdirs())throw new IOException("Cannot create analysis cache");
@@ -40,33 +51,52 @@ final class OfflineReconstructor implements AutoCloseable {
         File graphFile=new File(work,"alignment.json");JSONObject alignment;
         if(graphFile.isFile()){alignment=RecordingStore.read(graphFile);if(alignment.optInt("inputCount")!=inputs.size())alignment=align();}
         else alignment=align();
+        // Feature descriptors and FLANN indexes have no use during rasterization.
+        // Native allocations are outside Java's heap accounting, so release them
+        // explicitly before decoding any of the full-resolution source images.
+        releaseAnalysis();
         JSONArray poses=alignment.getJSONArray("poses");int sections=alignment.getInt("sections");
         if(sections==0)throw new IOException("No gameplay views could be aligned. Original images are retained; record with both movement buttons visible.");
         File atlasRoot=new File(recording,"map-v1");if(!atlasRoot.isDirectory()&&!atlasRoot.mkdirs())throw new IOException("Cannot create map");
-        List<NativeAtlas> atlases=new ArrayList<>();int[] counts=new int[sections];
+        JSONArray summaries=new JSONArray();int[] counts=new int[sections];
+        for(int i=0;i<sections;i++)summaries.put(new JSONObject().put("frames",0).put("bounds",JSONObject.NULL).put("tiles",new JSONArray()));
         File checkpoint=new File(atlasRoot,"checkpoint.json");int start=0;
         if(checkpoint.isFile()){JSONObject saved=RecordingStore.read(checkpoint);start=saved.optInt("next");JSONArray groups=saved.optJSONArray("sections");
-            if(groups!=null&&groups.length()==sections)for(int i=0;i<sections;i++)counts[i]=groups.getJSONObject(i).optInt("frames");else start=0;}
+            if(start>0&&start<=inputs.size()&&groups!=null&&groups.length()==sections){summaries=groups;for(int i=0;i<sections;i++)counts[i]=groups.getJSONObject(i).optInt("frames");}else start=0;}
+        NativeAtlas active=null;int activeSection=-1;
         try {
-            for(int i=0;i<sections;i++){NativeAtlas atlas=new NativeAtlas(new File(atlasRoot,"section-"+i));atlases.add(atlas);if(start>0){JSONArray b=RecordingStore.read(checkpoint).getJSONArray("sections").getJSONObject(i).optJSONArray("bounds");if(b!=null)atlas.bounds=new int[]{b.getInt(0),b.getInt(1),b.getInt(2),b.getInt(3)};}}
             for(int i=start;i<inputs.size();i++){check();progress.update("Building native map",i,inputs.size());JSONObject pose=poses.getJSONObject(i);int section=pose.getInt("section");
                 if(section>=0){JSONObject meta=RecordingStore.read(inputs.get(i));File png=new File(inputs.get(i).getParentFile(),meta.getString("file"));
+                    // A disconnected recording may contain many sections. Keeping
+                    // an eight-tile cache per section multiplied memory by their
+                    // count; only the section currently being painted is resident.
+                    if(section!=activeSection){if(active!=null){active.close();summaries.put(activeSection,active.summary(counts[activeSection]));active=null;}active=openAtlas(atlasRoot,section,summaries.getJSONObject(section));activeSection=section;}
                     Bitmap image=BitmapFactory.decodeFile(png.getPath());if(image==null)throw new IOException("Unreadable original image "+png.getName());
-                    Mat bgr=readImage(png),mask=null,padded=new Mat(),distance=new Mat(),cropped=null;
-                    try{mask=mask(bgr,meta);Core.copyMakeBorder(mask,padded,1,1,1,1,Core.BORDER_CONSTANT,new Scalar(0));Imgproc.distanceTransform(padded,distance,Imgproc.DIST_L2,3);cropped=distance.submat(1,1+bgr.rows(),1,1+bgr.cols());
-                        byte[] valid=new byte[image.getWidth()*image.getHeight()];float[] quality=new float[valid.length];mask.get(0,0,valid);cropped.get(0,0,quality);
-                        atlases.get(section).paint(image,valid,quality,(int)Math.round(pose.getDouble("x")),(int)Math.round(pose.getDouble("y")));counts[section]++;
-                    }finally{image.recycle();bgr.release();if(mask!=null)mask.release();padded.release();distance.release();if(cropped!=null)cropped.release();}}
-                // A checkpoint covers only fully flushed source frames. Replaying the current
-                // frame after an interruption is safe and does not change its source pixels.
-                for(NativeAtlas a:atlases)a.flush();RecordingStore.write(checkpoint,summary(atlases,counts).put("next",i+1));}
+                    Mat validMask=null,padded=new Mat(),distance=new Mat();
+                    try{int w=image.getWidth(),h=image.getHeight();validMask=mask(image,meta);byte[] valid=new byte[Math.multiplyExact(w,h)];validMask.get(0,0,valid);
+                        Core.copyMakeBorder(validMask,padded,1,1,1,1,Core.BORDER_CONSTANT,new Scalar(0));validMask.release();validMask=null;
+                        Imgproc.distanceTransform(padded,distance,Imgproc.DIST_L2,3);padded.release();
+                        // Source selection stores only scores 1..65. Reading the
+                        // distance transform one row at a time avoids another
+                        // full-frame float buffer while retaining identical scores.
+                        byte[] quality=new byte[valid.length];float[] row=new float[w];
+                        for(int y=0;y<h;y++){if((y&63)==0)check();Mat slice=distance.submat(y+1,y+2,1,w+1);try{slice.get(0,0,row);}finally{slice.release();}
+                            for(int x=0;x<w;x++)quality[y*w+x]=(byte)(1+(int)Math.min(64,row[x]));}
+                        distance.release();active.paint(image,valid,quality,(int)Math.round(pose.getDouble("x")),(int)Math.round(pose.getDouble("y")));counts[section]++;
+                    }finally{image.recycle();if(validMask!=null)validMask.release();padded.release();distance.release();}}
+                // Flush before committing a small batch. Replaying up to seven
+                // original frames after interruption is deterministic, while
+                // avoiding JSON serialization and an fsync for every image.
+                if((i+1)%CHECKPOINT_FRAMES==0||i+1==inputs.size()){
+                    if(active!=null){active.flush();summaries.put(activeSection,active.summary(counts[activeSection]));}RecordingStore.write(checkpoint,new JSONObject().put("sections",summaries).put("next",i+1));}}
+            if(active!=null){active.close();active=null;}
             progress.update("Preparing previews",0,sections);
-            for(int i=0;i<sections;i++){check();atlases.get(i).preview(new File(atlasRoot,"preview-"+i+".png"));progress.update("Preparing previews",i+1,sections);}
-            JSONObject result=summary(atlases,counts).put("schema",1).put("nativePixels",true).put("alignment",alignment).put("inputCount",inputs.size()).put("completed",System.currentTimeMillis());
+            for(int i=0;i<sections;i++){check();try(NativeAtlas previewAtlas=openAtlas(atlasRoot,i,summaries.getJSONObject(i))){boolean available=previewAtlas.preview(new File(atlasRoot,"preview-"+i+".png"),cancelled);summaries.getJSONObject(i).put("previewAvailable",available);}progress.update("Preparing previews",i+1,sections);}
+            JSONObject result=new JSONObject().put("sections",summaries).put("schema",1).put("nativePixels",true).put("alignment",alignment).put("inputCount",inputs.size()).put("completed",System.currentTimeMillis());
             RecordingStore.write(new File(recording,"map.json"),result);return result;
-        }finally{for(NativeAtlas a:atlases)a.close();}
+        }finally{if(active!=null)active.close();}
     }
-    private JSONObject summary(List<NativeAtlas> atlases,int[] counts)throws Exception{JSONArray sections=new JSONArray();for(int i=0;i<atlases.size();i++)sections.put(atlases.get(i).summary(counts[i]));return new JSONObject().put("sections",sections);}
+    private NativeAtlas openAtlas(File root,int section,JSONObject summary)throws Exception{NativeAtlas atlas=new NativeAtlas(new File(root,"section-"+section));JSONArray b=summary.optJSONArray("bounds");if(b!=null)atlas.bounds=new int[]{b.getInt(0),b.getInt(1),b.getInt(2),b.getInt(3)};return atlas;}
     private JSONObject align()throws Exception{
         int segment=0;boolean previousGame=false;long previousTime=0;
         for(int i=0;i<inputs.size();i++){check();progress.update("Finding stable scenery",i,inputs.size());Feature f=feature(i);JSONObject meta=RecordingStore.read(inputs.get(i));long time=meta.optLong("captureElapsedMs");
@@ -93,9 +123,10 @@ final class OfflineReconstructor implements AutoCloseable {
         // Look across the full recording, including future frames. Global joins require
         // agreement with continuity, or two independent observations for disconnected pieces.
         for(int i=globalStart;i<nodes.size();i++){check();progress.update("Checking revisits across the run",i,nodes.size());if(!usable[i]||i%4!=0)continue;
-            final int query=i;List<Integer> candidates=new ArrayList<>();for(int j=0;j<nodes.size();j++)if(usable[j]&&j!=i&&(Math.abs(i-j)>20||nodes.get(j).segment!=nodes.get(i).segment)&&nodes.get(j).width==nodes.get(i).width&&nodes.get(j).height==nodes.get(i).height)candidates.add(j);
-            candidates.sort((a,b)->Double.compare(similarity(nodes.get(query).signature,nodes.get(b).signature),similarity(nodes.get(query).signature,nodes.get(a).signature)));
-            List<Match> matches=new ArrayList<>();for(int k=0;k<Math.min(10,candidates.size());k++){Match m=match(candidates.get(k),i);if(m!=null)matches.add(m);}matches.sort((a,b)->Integer.compare(b.count,a.count));
+            CandidatePool candidates=new CandidatePool(10);for(int j=0;j<nodes.size();j++)if(usable[j]&&j!=i&&(Math.abs(i-j)>20||nodes.get(j).segment!=nodes.get(i).segment)&&nodes.get(j).width==nodes.get(i).width&&nodes.get(j).height==nodes.get(i).height)candidates.offer(j,similarity(nodes.get(i).signature,nodes.get(j).signature));
+            // Compute each scenery signature similarity once. A full sort used
+            // to repeat this 576-value comparison for every comparator call.
+            List<Match> matches=new ArrayList<>();for(int candidate:candidates.indices()){Match m=match(candidate,i);if(m!=null)matches.add(m);}matches.sort((a,b)->Integer.compare(b.count,a.count));
             for(Match m:matches){TranslationGraph.Pose a=preliminary[m.a],b=preliminary[i];double ox=a.x+m.dx-b.x,oy=a.y+m.dy-b.y;
                 if(a.section==b.section){if(Math.hypot(ox,oy)<=24)edges.add(m.edge());continue;}
                 if(m.count<30||m.ratio<.8)continue;boolean corroborated=false,ambiguous=false;
@@ -119,6 +150,7 @@ final class OfflineReconstructor implements AutoCloseable {
     private double similarity(float[] a,float[] b){double sum=0;for(int i=0;i<a.length;i++)sum+=a[i]*b[i];return sum;}
     private Match match(int anchor,int query)throws Exception{
         Feature a=feature(anchor),b=feature(query);if(!a.gameplay||!b.gameplay||a.width!=b.width||a.height!=b.height||a.descriptors.rows()<20||b.descriptors.rows()<20)return null;
+        a.prepare();
         List<MatOfDMatch> pairs=new ArrayList<>();List<Point> from=new ArrayList<>(),to=new ArrayList<>();MatOfPoint2f src=new MatOfPoint2f(),dst=new MatOfPoint2f();Mat inliers=new Mat(),affine=null;
         try{a.matcher.knnMatch(b.descriptors,pairs,2);for(MatOfDMatch pair:pairs){DMatch[] p=pair.toArray();if(p.length==2&&p[0].distance<.68*p[1].distance){from.add(b.points[p[0].queryIdx]);to.add(a.points[p[0].trainIdx]);}}
             if(from.size()<18)return null;src.fromList(from);dst.fromList(to);affine=Calib3d.estimateAffinePartial2D(src,dst,inliers,Calib3d.RANSAC,2,1000,.99,10);
@@ -132,20 +164,22 @@ final class OfflineReconstructor implements AutoCloseable {
     }
     private Feature feature(int i)throws Exception{
         Feature f=cache.get(i);if(f!=null)return f;check();File saved=new File(work,String.format(Locale.ROOT,"%08d.features",i));
-        if(saved.isFile()){try{f=load(saved);}catch(IOException e){f=extract(i);save(saved,f);}}else{f=extract(i);save(saved,f);}
-        f.prepare();cache.put(i,f);while(cache.size()>8){Map.Entry<Integer,Feature> oldest=cache.entrySet().iterator().next();oldest.getValue().close();cache.remove(oldest.getKey());}return f;
+        try{if(saved.isFile()){try{f=load(saved);}catch(IOException e){f=extract(i);save(saved,f);}}else{f=extract(i);save(saved,f);}
+            cache.put(i,f);while(cache.size()>8){Map.Entry<Integer,Feature> oldest=cache.entrySet().iterator().next();oldest.getValue().close();cache.remove(oldest.getKey());}return f;
+        }catch(Exception|Error e){if(f!=null&&!cache.containsValue(f))f.close();throw e;}
     }
     private Feature extract(int i)throws Exception{
         JSONObject meta=RecordingStore.read(inputs.get(i));File png=new File(inputs.get(i).getParentFile(),meta.getString("file"));Mat image=readImage(png),gray=new Mat(),valid=null,small=new Mat(),smallMask=new Mat(),signature=new Mat();MatOfKeyPoint points=new MatOfKeyPoint();Feature f=new Feature();
         try{f.width=image.cols();f.height=image.rows();f.scale=Math.min(1,960.0/f.width);Imgproc.cvtColor(image,gray,Imgproc.COLOR_BGR2GRAY);f.gameplay=gameplay(gray);f.signature=new float[32*18];f.points=new Point[0];
             Imgproc.resize(gray,signature,new Size(32,18));byte[] samples=new byte[32*18];signature.get(0,0,samples);double mean=0;for(byte s:samples)mean+=s&255;mean/=samples.length;double norm=0;
             for(int k=0;k<samples.length;k++){f.signature[k]=(float)((samples[k]&255)-mean);norm+=f.signature[k]*f.signature[k];}norm=Math.sqrt(norm);if(norm>0)for(int k=0;k<samples.length;k++)f.signature[k]/=norm;
-            if(f.gameplay){valid=mask(image,meta);Size size=new Size(Math.round(f.width*f.scale),Math.round(f.height*f.scale));Imgproc.resize(gray,small,size,0,0,Imgproc.INTER_AREA);Imgproc.resize(valid,smallMask,size,0,0,Imgproc.INTER_NEAREST);
-                sift.detectAndCompute(small,smallMask,points,f.descriptors);KeyPoint[] keys=points.toArray();f.points=new Point[keys.length];for(int k=0;k<keys.length;k++)f.points[k]=keys[k].pt;}
+            if(f.gameplay){valid=mask(image,meta);image.release();Size size=new Size(Math.round(f.width*f.scale),Math.round(f.height*f.scale));Imgproc.resize(gray,small,size,0,0,Imgproc.INTER_AREA);gray.release();Imgproc.resize(valid,smallMask,size,0,0,Imgproc.INTER_NEAREST);valid.release();valid=null;
+                if(sift==null)sift=SIFT.create(2200,3,.025,10,1.6);sift.detectAndCompute(small,smallMask,points,f.descriptors);KeyPoint[] keys=points.toArray();f.points=new Point[keys.length];for(int k=0;k<keys.length;k++)f.points[k]=keys[k].pt;}
             return f;
+        }catch(Exception|Error e){f.close();throw e;
         }finally{image.release();gray.release();if(valid!=null)valid.release();small.release();smallMask.release();signature.release();points.release();}
     }
-    private Mat readImage(File png)throws IOException{Mat image=Imgcodecs.imread(png.getPath(),Imgcodecs.IMREAD_COLOR);if(image.empty())throw new IOException("Cannot read original PNG "+png.getName());return image;}
+    private Mat readImage(File png)throws IOException{Mat image=Imgcodecs.imread(png.getPath(),Imgcodecs.IMREAD_COLOR);if(image.empty()){image.release();throw new IOException("Cannot read original PNG "+png.getName());}return image;}
     private boolean gameplay(Mat gray){int h=gray.rows(),w=gray.cols();List<org.opencv.core.Rect> boxes=new ArrayList<>();
         for(int threshold:new int[]{70,110}){Mat binary=new Mat(),hierarchy=new Mat();List<MatOfPoint> contours=new ArrayList<>();
             try{Imgproc.threshold(gray,binary,threshold,255,Imgproc.THRESH_BINARY);Imgproc.findContours(binary,contours,hierarchy,Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
@@ -154,17 +188,34 @@ final class OfflineReconstructor implements AutoCloseable {
         for(org.opencv.core.Rect a:boxes)for(org.opencv.core.Rect b:boxes)if(b.x>a.x+a.width*.8&&b.x<a.x+a.width*1.3&&Math.abs(b.y-a.y)<h*.025&&Math.abs(b.height-a.height)<h*.03)return true;return false;
     }
     private Mat mask(Mat bgr,JSONObject meta)throws JSONException{
-        int w=bgr.cols(),h=bgr.rows();Mat hsv=new Mat(),dynamic=new Mat(),kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(19,19));Mat mask=new Mat(h,w,CvType.CV_8UC1,new Scalar(255));
-        try{Imgproc.cvtColor(bgr,hsv,Imgproc.COLOR_BGR2HSV);Core.inRange(hsv,new Scalar(0,66,56),new Scalar(180,255,255),dynamic);Imgproc.dilate(dynamic,dynamic,kernel);mask.setTo(new Scalar(0),dynamic);
-            blank(mask,0,0,(int)(w*.37),(int)(h*.14));blank(mask,(int)(w*.91),0,w,(int)(h*.17));blank(mask,(int)(w*.08),(int)(h*.69),(int)(w*.38),(int)(h*.95));
-            JSONArray occlusions=meta.optJSONArray("occlusions");if(occlusions!=null)for(int i=0;i<occlusions.length();i++){JSONArray r=occlusions.getJSONArray(i);blank(mask,r.getInt(0),r.getInt(1),r.getInt(2),r.getInt(3));}return mask;
-        }finally{hsv.release();dynamic.release();kernel.release();}
+        int w=bgr.cols(),h=bgr.rows();Mat hsv=new Mat(),dynamic=new Mat(),kernel=null,mask=new Mat();
+        try{mask.create(h,w,CvType.CV_8UC1);mask.setTo(new Scalar(255));kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(19,19));Imgproc.cvtColor(bgr,hsv,Imgproc.COLOR_BGR2HSV);Core.inRange(hsv,new Scalar(0,66,56),new Scalar(180,255,255),dynamic);hsv.release();Imgproc.dilate(dynamic,dynamic,kernel);mask.setTo(new Scalar(0),dynamic);
+            blankControls(mask,meta);return mask;
+        }catch(JSONException|RuntimeException|Error e){mask.release();throw e;
+        }finally{hsv.release();dynamic.release();if(kernel!=null)kernel.release();}
     }
-    private void blank(Mat image,int x,int y,int right,int bottom){x=Math.max(0,x);y=Math.max(0,y);right=Math.min(image.cols(),right);bottom=Math.min(image.rows(),bottom);if(right>x&&bottom>y){Mat r=image.submat(y,bottom,x,right);r.setTo(new Scalar(0));r.release();}}
+    /** Exact HSV exclusions, without decoding a second native full-frame image. */
+    private Mat mask(Bitmap image,JSONObject meta)throws Exception{
+        int w=image.getWidth(),h=image.getHeight(),stripRows=Math.min(64,h);
+        Mat dynamic=new Mat(),mask=new Mat(),bgr=new Mat(),hsv=new Mat(),selected=new Mat(),kernel=null;
+        try{dynamic.create(h,w,CvType.CV_8UC1);mask.create(h,w,CvType.CV_8UC1);mask.setTo(new Scalar(255));kernel=Imgproc.getStructuringElement(Imgproc.MORPH_RECT,new Size(19,19));
+            int[] pixels=new int[Math.multiplyExact(w,stripRows)];byte[] colors=new byte[Math.multiplyExact(pixels.length,3)];
+            for(int y=0;y<h;y+=stripRows){check();int rows=Math.min(stripRows,h-y);image.getPixels(pixels,0,w,0,y,w,rows);
+                for(int p=0;p<w*rows;p++){int c=pixels[p],j=p*3;colors[j]=(byte)c;colors[j+1]=(byte)(c>>>8);colors[j+2]=(byte)(c>>>16);}
+                bgr.create(rows,w,CvType.CV_8UC3);bgr.put(0,0,colors,0,w*rows*3);Imgproc.cvtColor(bgr,hsv,Imgproc.COLOR_BGR2HSV);Core.inRange(hsv,new Scalar(0,66,56),new Scalar(180,255,255),selected);
+                Mat destination=dynamic.rowRange(y,y+rows);try{selected.copyTo(destination);}finally{destination.release();}}
+            bgr.release();hsv.release();selected.release();Imgproc.dilate(dynamic,dynamic,kernel);mask.setTo(new Scalar(0),dynamic);blankControls(mask,meta);return mask;
+        }catch(Exception|Error e){mask.release();throw e;
+        }finally{dynamic.release();bgr.release();hsv.release();selected.release();if(kernel!=null)kernel.release();}
+    }
+    private void blankControls(Mat mask,JSONObject meta)throws JSONException{int w=mask.cols(),h=mask.rows();blank(mask,0,0,(int)(w*.37),(int)(h*.14));blank(mask,(int)(w*.91),0,w,(int)(h*.17));blank(mask,(int)(w*.08),(int)(h*.69),(int)(w*.38),(int)(h*.95));
+        JSONArray occlusions=meta.optJSONArray("occlusions");if(occlusions!=null)for(int i=0;i<occlusions.length();i++){JSONArray r=occlusions.getJSONArray(i);blank(mask,r.getInt(0),r.getInt(1),r.getInt(2),r.getInt(3));}}
+    private void blank(Mat image,int x,int y,int right,int bottom){x=Math.max(0,x);y=Math.max(0,y);right=Math.min(image.cols(),right);bottom=Math.min(image.rows(),bottom);if(right>x&&bottom>y){Mat r=image.submat(y,bottom,x,right);try{r.setTo(new Scalar(0));}finally{r.release();}}}
     private void save(File file,Feature f)throws IOException{AtomicFile atom=new AtomicFile(file);FileOutputStream stream=atom.startWrite();
         try{DataOutputStream out=new DataOutputStream(new BufferedOutputStream(stream));out.writeInt(1);out.writeInt(f.width);out.writeInt(f.height);out.writeDouble(f.scale);out.writeBoolean(f.gameplay);for(float s:f.signature)out.writeFloat(s);out.writeInt(f.points.length);
             for(Point p:f.points){out.writeFloat((float)p.x);out.writeFloat((float)p.y);}int len=f.descriptors.rows()*f.descriptors.cols();out.writeInt(f.descriptors.cols());float[] desc=new float[len];if(len>0)f.descriptors.get(0,0,desc);for(float d:desc)out.writeFloat(d);out.flush();atom.finishWrite(stream);
         }catch(IOException e){atom.failWrite(stream);throw e;}}
     private Feature load(File file)throws IOException{Feature f=new Feature();try(DataInputStream in=new DataInputStream(new BufferedInputStream(new AtomicFile(file).openRead()))){if(in.readInt()!=1)throw new IOException("Old feature cache");f.width=in.readInt();f.height=in.readInt();f.scale=in.readDouble();f.gameplay=in.readBoolean();f.signature=new float[32*18];for(int i=0;i<f.signature.length;i++)f.signature[i]=in.readFloat();int n=in.readInt();if(n<0||n>10000)throw new IOException("Invalid feature cache");f.points=new Point[n];for(int i=0;i<n;i++)f.points[i]=new Point(in.readFloat(),in.readFloat());int columns=in.readInt();if(n>0&&columns!=128)throw new IOException("Invalid descriptor cache");if(n>0){float[] data=new float[n*columns];for(int i=0;i<data.length;i++)data[i]=in.readFloat();f.descriptors.create(n,columns,CvType.CV_32F);f.descriptors.put(0,0,data);}return f;}catch(IOException e){f.close();throw e;}}
-    @Override public void close(){for(Feature f:cache.values())f.close();cache.clear();sift.clear();}
+    private void releaseAnalysis(){for(Feature f:cache.values())f.close();cache.clear();nodes.clear();if(sift!=null){sift.clear();sift=null;}}
+    @Override public void close(){releaseAnalysis();}
 }

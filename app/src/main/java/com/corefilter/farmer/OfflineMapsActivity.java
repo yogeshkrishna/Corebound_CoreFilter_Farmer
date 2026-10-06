@@ -19,6 +19,7 @@ public final class OfflineMapsActivity extends Activity {
     private final Map<String,TextView> statuses=new HashMap<>();private final Map<String,Button> builds=new HashMap<>(),previews=new HashMap<>();
     private final ExecutorService images=Executors.newSingleThreadExecutor();private String exportRecording;private int exportSection;
     private volatile boolean sharing;
+    private AlertDialog previewDialog;private Future<?> previewLoad;
     private final Runnable refresh=new Runnable(){public void run(){refreshStatuses();handler.postDelayed(this,1000);}};
     @Override public void onCreate(Bundle state){super.onCreate(state);getWindow().setStatusBarColor(Ui.BG);getWindow().setNavigationBarColor(Ui.BG);
         if(state!=null){exportRecording=state.getString("exportRecording");exportSection=state.getInt("exportSection");}home();
@@ -27,7 +28,7 @@ public final class OfflineMapsActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("exportRecording",exportRecording);state.putInt("exportSection",exportSection);}
     @Override public void onResume(){super.onResume();handler.post(refresh);}
     @Override public void onPause(){handler.removeCallbacks(refresh);super.onPause();}
-    @Override public void onDestroy(){images.shutdown();super.onDestroy();}
+    @Override public void onDestroy(){if(previewDialog!=null)previewDialog.dismiss();if(previewLoad!=null)previewLoad.cancel(true);images.shutdownNow();super.onDestroy();}
     private void home(){statuses.clear();builds.clear();previews.clear();FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Ui.BG);getWindow().setDecorFitsSystemWindows(false);
         root.setOnApplyWindowInsetsListener((view,insets)->{Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
         ScrollView scroll=new ScrollView(this);LinearLayout list=Ui.column(this);int pad=Ui.dp(this,20);list.setPadding(pad,pad,pad,pad);scroll.addView(list);root.addView(scroll,new FrameLayout.LayoutParams(-1,-1));setContentView(root);root.requestApplyInsets();
@@ -48,7 +49,7 @@ public final class OfflineMapsActivity extends Activity {
         if(state.equals("recording")&&!LiveCaptureService.active()&&!LiveCaptureService.finishing()){
             record.put("state","recorded").put("message","Recording ended. Saved images are ready to build.").put("frames",RecordingStore.frames(f).size());RecordingStore.write(new File(f,"recording.json"),record);state="recorded";}
         if(state.equals("processing")&&!OfflineMapService.active()){record.put("state",new File(f,"map.json").isFile()?"complete":"paused").put("message","Processing interrupted. Build / Resume continues from saved analysis.");RecordingStore.write(new File(f,"recording.json"),record);}
-        TextView status=statuses.get(f.getName());if(status!=null)status.setText(record.optInt("frames")+" original images · "+String.format(Locale.ROOT,"%.1f MB",record.optLong("bytes")/1048576.0)+"\n"+record.optString("message"));
+        TextView status=statuses.get(f.getName());if(status!=null){String text=record.optInt("frames")+" original images · "+String.format(Locale.ROOT,"%.1f MB",record.optLong("bytes")/1048576.0)+"\n"+record.optString("message");if(!text.contentEquals(status.getText()))status.setText(text);}
         Button build=builds.get(f.getName());if(build!=null)build.setEnabled(!LiveCaptureService.active()&&!LiveCaptureService.finishing()&&!OfflineMapService.active()&&!sharing);
         Button preview=previews.get(f.getName());if(preview!=null)preview.setEnabled(new File(f,"map.json").isFile()&&!OfflineMapService.active());
     }catch(Exception ignored){}}
@@ -58,12 +59,14 @@ public final class OfflineMapsActivity extends Activity {
         for(int i=0;i<labels.length;i++){JSONObject s=sections.getJSONObject(i);JSONArray b=s.optJSONArray("bounds");labels[i]="Section "+(i+1)+(b==null?" · no pixels":" · "+(b.getInt(2)-b.getInt(0))+" × "+(b.getInt(3)-b.getInt(1))+" pixels");}
         new AlertDialog.Builder(this).setTitle(labels.length>1?"Separate sections · uncertain joins":"Your native map").setItems(labels,(d,which)->preview(f,which)).setNegativeButton("Close",null).show();
     }catch(Exception e){error(e);}}
-    private void preview(File f,int section){LinearLayout body=Ui.column(this);int pad=Ui.dp(this,16);body.setPadding(pad,pad,pad,pad);body.setBackgroundColor(Ui.BG);
+    private void preview(File f,int section){if(previewDialog!=null)previewDialog.dismiss();if(previewLoad!=null)previewLoad.cancel(true);LinearLayout body=Ui.column(this);int pad=Ui.dp(this,16);body.setPadding(pad,pad,pad,pad);body.setBackgroundColor(Ui.BG);
         body.addView(Ui.text(this,"Drag to pan · pinch to zoom. This display preview is fitted; PNG export keeps every original pixel. Transparent areas were not observed.",13,Ui.MUTED));
+        TextView loading=Ui.text(this,"Loading display preview…",13,Ui.MUTED);body.addView(loading);
         MapPreview view=new MapPreview(this);int height=Math.max(Ui.dp(this,80),Math.min(Ui.dp(this,350),getResources().getDisplayMetrics().heightPixels-Ui.dp(this,190)));body.addView(view,new LinearLayout.LayoutParams(-1,height));
         ScrollView scroll=new ScrollView(this);scroll.addView(body);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Section "+(section+1)).setView(scroll).setPositiveButton("Save native PNG",(d,w)->export(f,section)).setNegativeButton("Close",null).create();dialog.setOnDismissListener(d->view.dispose());dialog.show();
-        images.execute(()->{Bitmap bitmap=BitmapFactory.decodeFile(new File(f,"map-v1/preview-"+section+".png").getPath());handler.post(()->{if(dialog.isShowing())view.image(bitmap);else if(bitmap!=null)bitmap.recycle();});});}
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Section "+(section+1)).setView(scroll).setPositiveButton("Save native PNG",(d,w)->export(f,section)).setNegativeButton("Close",null).create();previewDialog=dialog;dialog.setOnDismissListener(d->{view.dispose();if(previewDialog==dialog){previewDialog=null;if(previewLoad!=null)previewLoad.cancel(true);}});dialog.show();
+        previewLoad=images.submit(()->{try{Bitmap bitmap=PreviewImages.read(new File(f,"map-v1/preview-"+section+".png"));handler.post(()->{if(!isFinishing()&&!isDestroyed()&&dialog.isShowing()){loading.setVisibility(View.GONE);view.image(bitmap);}else bitmap.recycle();});}
+            catch(Exception e){handler.post(()->{if(!isFinishing()&&!isDestroyed()&&dialog.isShowing())loading.setText(e.getMessage());});}});}
     private void export(File f,int section){if(OfflineMapService.active()){Toast.makeText(this,"Pause the current job first",Toast.LENGTH_LONG).show();return;}exportRecording=f.getName();exportSection=section;
         Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("image/png").putExtra(Intent.EXTRA_TITLE,"Ceiling-Scout-"+f.getName()+"-section-"+(section+1)+".png");startActivityForResult(i,91);}
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request!=91||result!=RESULT_OK||data==null||exportRecording==null)return;
@@ -73,13 +76,13 @@ public final class OfflineMapsActivity extends Activity {
         if(sharing){Toast.makeText(this,"A recording ZIP is already being prepared",Toast.LENGTH_SHORT).show();return;}
         new AlertDialog.Builder(this).setTitle("Share original recording").setMessage("This includes original game PNGs, capture metadata and alignment data. It can be large. Choose where to send it after the ZIP is prepared.")
                 .setPositiveButton("Prepare ZIP",(d,w)->{sharing=true;Toast.makeText(this,"Preparing recording…",Toast.LENGTH_SHORT).show();images.execute(()->{try{File zip=new File(getCacheDir(),"recording-"+f.getName()+".zip");
-                    try(java.util.zip.ZipOutputStream out=new java.util.zip.ZipOutputStream(new FileOutputStream(zip))){pack(f,f,out);}
+                    try(java.util.zip.ZipOutputStream out=new java.util.zip.ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zip),65536))){out.setLevel(java.util.zip.Deflater.NO_COMPRESSION);pack(f,f,out,new byte[65536]);}
                     handler.post(()->{if(isFinishing()||isDestroyed())return;Uri uri=OfflineFileProvider.uri(this,zip);startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM,uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),"Share recording"));});
                 }catch(Exception e){handler.post(()->error(e));}finally{sharing=false;}});}).setNegativeButton("Cancel",null).show();}
     private void remove(File f){if(LiveCaptureService.active()||LiveCaptureService.finishing()||OfflineMapService.active()||sharing){Toast.makeText(this,"Stop recording, processing and ZIP preparation first",Toast.LENGTH_LONG).show();return;}
         new AlertDialog.Builder(this).setTitle("Permanently delete this recording?").setMessage("This removes its original images, analysis, map tiles and shared ZIP from this phone. PNGs you already exported elsewhere remain saved.").setNegativeButton("Keep recording",null).setPositiveButton("Delete",(d,w)->images.execute(()->{try{RecordingStore.delete(this,f.getName());handler.post(()->{if(!isFinishing()&&!isDestroyed())home();});}catch(Exception e){handler.post(()->error(e));}})).show();}
-    private void pack(File root,File file,java.util.zip.ZipOutputStream out)throws IOException{if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)pack(root,child,out);}else{
-        String name=root.toPath().relativize(file.toPath()).toString().replace('\\','/');out.putNextEntry(new java.util.zip.ZipEntry(name));try(InputStream in=new FileInputStream(file)){byte[] buffer=new byte[65536];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);}out.closeEntry();}}
+    private void pack(File root,File file,java.util.zip.ZipOutputStream out,byte[] buffer)throws IOException{if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("Sharing canceled");if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)pack(root,child,out,buffer);}else{
+        String name=root.toPath().relativize(file.toPath()).toString().replace('\\','/');out.putNextEntry(new java.util.zip.ZipEntry(name));try(InputStream in=new FileInputStream(file)){int n;while((n=in.read(buffer))!=-1){if(Thread.currentThread().isInterrupted())throw new InterruptedIOException("Sharing canceled");out.write(buffer,0,n);}}out.closeEntry();}}
     private void error(Exception e){if(isFinishing()||isDestroyed())return;new AlertDialog.Builder(this).setTitle("Map action unavailable").setMessage(e.getMessage()).setPositiveButton("Close",null).show();}
     private static final class MapPreview extends View {
         private Bitmap bitmap;private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);private final Matrix matrix=new Matrix();private final ScaleGestureDetector scale;

@@ -30,8 +30,10 @@ final class RecordingStore {
         String name=String.format(Locale.ROOT,"%08d",number); File png=new File(f,"frames/"+name+".png");
         AtomicFile atom=new AtomicFile(png); FileOutputStream stream=atom.startWrite();
         MessageDigest digest=MessageDigest.getInstance("SHA-256");
-        try { if(!image.compress(Bitmap.CompressFormat.PNG,100,new DigestOutputStream(stream,digest)))throw new IOException("Could not save PNG"); atom.finishWrite(stream); }
-        catch(Exception e){atom.failWrite(stream);throw e;}
+        try { OutputStream pngBytes=new BufferedOutputStream(new DigestOutputStream(stream,digest),64*1024);
+            if(!image.compress(Bitmap.CompressFormat.PNG,100,pngBytes))throw new IOException("Could not save PNG");
+            pngBytes.flush();atom.finishWrite(stream); }
+        catch(Exception|OutOfMemoryError e){atom.failWrite(stream);throw e;}
         StringBuilder hash=new StringBuilder();for(byte value:digest.digest())hash.append(String.format(Locale.ROOT,"%02x",value&255));
         meta.put("file",name+".png").put("bytes",png.length()).put("sha256",hash.toString());
         write(new File(f,"frames/"+name+".json"),meta);
