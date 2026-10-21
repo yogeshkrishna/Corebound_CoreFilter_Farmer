@@ -1,0 +1,333 @@
+{
+  "source": {
+    "package": "com.Overcurve.Corebound",
+    "version": "1.2.1.1",
+    "build": 140,
+    "scope": "Static asset/native analysis only; no live farming verification",
+    "address_convention": "Native method labels are raw code file offsets. For ADRP data constants, resolve ELF VA=label+0x4000 through PT_LOAD."
+  },
+  "core_filters": [
+    {
+      "source_file": "resources.assets",
+      "path_id": 15768,
+      "name": "Core Filter (Black)",
+      "item_name": "Core Filter",
+      "id": "core_filter_black",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.44999998807907104,
+      "raw_sha256": "975f85864d30c799396e4e465c17fc9a8f3237d08cb7d6e2b9fc249ac46b2142"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15769,
+      "name": "Core Filter (Blue)",
+      "item_name": "Core Filter",
+      "id": "core_filter_blue",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 1.0,
+      "raw_sha256": "13d53c1f0213294d270ecfcbc10c621d87e95eaf0c255ecaa10df603e717fc4b"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15770,
+      "name": "Core Filter (Cyan)",
+      "item_name": "Core Filter",
+      "id": "core_filter_cyan",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.8500000238418579,
+      "raw_sha256": "27f171e8c9835e6c5ffc9bea7a219f9739b0c06ffe98f3f868ae604087830ae1"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15771,
+      "name": "Core Filter (Green)",
+      "item_name": "Core Filter",
+      "id": "core_filter_green",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.7200000286102295,
+      "raw_sha256": "35ef9ed2497174e39bb364b28213acac17e99172416e0e718cb7ed6165040c0b"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15772,
+      "name": "Core Filter (Mint)",
+      "item_name": "Core Filter",
+      "id": "core_filter_mint",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.6600000262260437,
+      "raw_sha256": "e7a974f97cc7a6464d7ffb663f82544de59df3ad62067b35e7f79e0ea269e93b"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15773,
+      "name": "Core Filter (Orange)",
+      "item_name": "Core Filter",
+      "id": "core_filter_orange",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.6299999952316284,
+      "raw_sha256": "64824dc12183728622c71a3e535905aa89d4dc4ac5eda70cde245c82b300c0a2"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15774,
+      "name": "Core Filter (Pink)",
+      "item_name": "Core Filter",
+      "id": "core_filter_pink",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.75,
+      "raw_sha256": "121d4e148c1ba898827e4518aac2e782b140f974c927a7fd988613b7d11256f0"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15775,
+      "name": "Core Filter (Purple)",
+      "item_name": "Core Filter",
+      "id": "core_filter_purple",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.6000000238418579,
+      "raw_sha256": "b5cb625378600b95e737e7b7effabec0deb7f4719f9663f1f46571b66f410498"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15776,
+      "name": "Core Filter (Red)",
+      "item_name": "Core Filter",
+      "id": "core_filter_red",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 1.0,
+      "raw_sha256": "56dce550d8be93441c4e184d9cc68ff213d5b0e395ca851dfa62f608ba0cdf2a"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15777,
+      "name": "Core Filter (White)",
+      "item_name": "Core Filter",
+      "id": "core_filter_white",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.5,
+      "raw_sha256": "325d798c220937d6f0e287be1287f7ba7d2559b5ff60f3922a6ed07d80147e7a"
+    },
+    {
+      "source_file": "resources.assets",
+      "path_id": 15778,
+      "name": "Core Filter (Yellow)",
+      "item_name": "Core Filter",
+      "id": "core_filter_yellow",
+      "description": "Changes the color of your core.",
+      "item_type": 3,
+      "reward_weight": 1.0,
+      "is_relic": true,
+      "relic_rarity": 0.6899999976158142,
+      "raw_sha256": "d9362015e6bcf968e50f1d1ef910a07644074733970935c4b1bcaedc74998d8d"
+    }
+  ],
+  "enemy_filter_sources": [
+    {
+      "path_id": 15750,
+      "id": "spectrum",
+      "name": "Spectrum",
+      "filter_ids": [
+        "core_filter_black",
+        "core_filter_purple",
+        "core_filter_yellow",
+        "core_filter_green",
+        "core_filter_white",
+        "core_filter_pink",
+        "core_filter_orange",
+        "core_filter_mint"
+      ],
+      "max_health": 165.0,
+      "damage": 0.0,
+      "frequency": 0.0026145472656935453,
+      "tile_size": {
+        "x": 3,
+        "y": 8
+      },
+      "positioning": 3,
+      "is_secret": 1
+    },
+    {
+      "path_id": 15759,
+      "id": "voltheart",
+      "name": "Voltheart",
+      "filter_ids": [
+        "core_filter_cyan"
+      ],
+      "max_health": 70.0,
+      "damage": 28.0,
+      "frequency": 0.0014440931845456362,
+      "tile_size": {
+        "x": 3,
+        "y": 7
+      },
+      "positioning": 3,
+      "is_secret": 1
+    }
+  ],
+  "lost_scrapyard": {
+    "world_source": "resources.assets/16082",
+    "secret_enemy": "spectrum",
+    "filter_colors": [
+      "black",
+      "purple",
+      "yellow",
+      "green",
+      "white",
+      "pink",
+      "orange",
+      "mint"
+    ],
+    "farming_implication": "Explore Lost Scrapyard, detect and destroy Spectrum, approach and collect its actual item drops; return/repeat only after observed state transitions.",
+    "optimality": "No measured fastest loadout/boost/run route established. Boost increases per-filter drop thresholds but also changes combat difficulty and run time."
+  },
+  "relic_drop": {
+    "native_method": "ep(ItemObject,float,bool,int,bool,fq,int)",
+    "code_evidence": [
+      "ep.ctor 0x35213B8..0x35214A8",
+      "ep.ctor adapter 0x3521A60..0x3521A80",
+      "EnemyObject.fza 0x3470050..0x3470118",
+      "Enemy.xn 0x3384578..0x33846E8"
+    ],
+    "formula": "powf(powf(1 - 1/(0.2*boostIndex + 1.1), 3), 1/item.relicRarity)",
+    "meaning": "Single relic loot-table threshold; generated per boost index. InventoryManager uses cumulative progress thresholds rather than independent Bernoulli rolls for every enemy.",
+    "sample_analytical_rates": {
+      "0": {
+        "core_filter_black": 1.1412529549571498e-07,
+        "core_filter_green": 4.5799842472700556e-05,
+        "core_filter_mint": 1.8467030809322732e-05,
+        "core_filter_orange": 1.098973388076828e-05,
+        "core_filter_pink": 6.830134553650716e-05,
+        "core_filter_purple": 6.2092161887792174e-06,
+        "core_filter_white": 5.644739300537786e-07,
+        "core_filter_yellow": 2.9662359973035207e-05
+      },
+      "1": {
+        "core_filter_black": 5.682235603053703e-05,
+        "core_filter_green": 0.0022211336864790695,
+        "core_filter_mint": 0.0012745421923613426,
+        "core_filter_orange": 0.0009279269710213594,
+        "core_filter_pink": 0.0028360351528307864,
+        "core_filter_purple": 0.0006544698413231944,
+        "core_filter_white": 0.00015103145784305973,
+        "core_filter_yellow": 0.0017029749580818113
+      },
+      "2": {
+        "core_filter_black": 0.0006594646961497078,
+        "core_filter_green": 0.010280041100209513,
+        "core_filter_mint": 0.006780584150928315,
+        "core_filter_orange": 0.0053455698395134255,
+        "core_filter_pink": 0.012345679012345685,
+        "core_filter_purple": 0.0041152272356982135,
+        "core_filter_white": 0.0013717421124828542,
+        "core_filter_yellow": 0.008424803009937018
+      },
+      "3": {
+        "core_filter_black": 0.0026977025110552317,
+        "core_filter_green": 0.024795415570493293,
+        "core_filter_mint": 0.017717610675039033,
+        "core_filter_orange": 0.014621629974539583,
+        "core_filter_pink": 0.02874726116785003,
+        "core_filter_purple": 0.011837109626482198,
+        "core_filter_white": 0.00487410310458357,
+        "core_filter_yellow": 0.02111355576230626
+      },
+      "5": {
+        "core_filter_black": 0.01342216437863803,
+        "core_filter_green": 0.06759104691479169,
+        "core_filter_mint": 0.05290728329135458,
+        "core_filter_orange": 0.045997096725891314,
+        "core_filter_pink": 0.07528241833392467,
+        "core_filter_purple": 0.03943365276489242,
+        "core_filter_white": 0.02065572022314033,
+        "core_filter_yellow": 0.06011941372386455
+      },
+      "10": {
+        "core_filter_black": 0.0745390710687477,
+        "core_filter_green": 0.19735131827263847,
+        "core_filter_mint": 0.1702828631112907,
+        "core_filter_orange": 0.1565164533229684,
+        "core_filter_pink": 0.21058644037331048,
+        "core_filter_purple": 0.14265534161409463,
+        "core_filter_white": 0.09663748200273667,
+        "core_filter_yellow": 0.18390700095685017
+      }
+    },
+    "sample_rate_warning": "Analytical threshold values; not measured drops/run, and not a guarantee for an individual kill."
+  },
+  "generic_reward_relic_branch": {
+    "method": "RewardsManager.ckf",
+    "evidence": "0x352BCB0..0x352BD30",
+    "chance_if_enabled": 0.0078125,
+    "condition": "Only when bool d enables it and eligible relics exist.",
+    "limitation": "Caller-dependent reward path; do not use 1/128 as the Spectrum enemy drop probability."
+  },
+  "pickup": {
+    "evidence": [
+      "ItemPickup.fdz 0x344A4E4..0x344A554",
+      "InventoryManager.cfl 0x351D704..0x351D7D4",
+      "InventoryManager.cfj 0x3510230..0x351030C"
+    ],
+    "verified": "Collection invokes inventory add and run-loot record. Enemy disappearance alone is not pickup evidence.",
+    "persistence_limit": "Retention across forced app termination/abandonment or failed save has not been executed or verified."
+  },
+  "screens": {
+    "end_screen_class": "EndScreenManager",
+    "source": "level1/3606",
+    "verified_controls": [
+      "continueButton",
+      "bonusButton",
+      "bonusButtonShards",
+      "endScreenBackground"
+    ],
+    "bonus_ad_evidence": "EndScreenManager.cqg 0x3540804..0x35409D0 -> AdManager.bud",
+    "bonus_shards_evidence": "EndScreenManager.cqi 0x35409D4..0x3540AF8 -> ShardsManager.cle",
+    "ordinary_continue": "EndScreenManager.cps 0x3540BC0..0x3540D04 schedules MenuManager transition; cpt -> GlobalManager.eip",
+    "detection_limit": "Serialized names are not Android accessibility resource IDs. On-device screen templates/OCR/capture observations must establish displayed state."
+  },
+  "prohibited_assumptions": [
+    "A completed run necessarily grants a Core Filter",
+    "Every Spectrum kill guarantees a filter",
+    "All 11 colors can drop from the Lost Scrapyard Spectrum",
+    "Static enemy frequency is a per-run probability",
+    "A cleared gate or vanished enemy proves a filter was collected",
+    "A private Unity method is a public automation API",
+    "An unknown seed can be reconstructed from the APK alone"
+  ],
+  "validation": {
+    "filter_payloads": 11,
+    "filter_enemy_sources": 2,
+    "spectrum_colors": 8,
+    "all_assertions_passed": true,
+    "live_farming_verified": false
+  }
+}

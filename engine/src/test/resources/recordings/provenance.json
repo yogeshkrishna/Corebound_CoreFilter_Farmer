@@ -1,0 +1,12 @@
+{
+  "source": "User-provided recording video-01.mp4",
+  "cache": "Sequential frame-index capture frames-01, not random video seeking",
+  "indices": [
+    516,
+    528,
+    540,
+    552
+  ],
+  "transformation": "Uniformly resized to640x295 for replay tests; no geometry edits",
+  "liveFarmingProof": false
+}

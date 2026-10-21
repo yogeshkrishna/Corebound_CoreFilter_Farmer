@@ -1,0 +1,118 @@
+{
+  "source": {
+    "package": "com.Overcurve.Corebound",
+    "version": "1.2.1.1",
+    "build": 140,
+    "method_evidence": "Static ARM64 code and decoded serialized assets; no device interaction was performed"
+  },
+  "input": {
+    "schemes": {
+      "Gamepad": 0,
+      "Joystick": 1
+    },
+    "force_mobile_input": true,
+    "jump_buffer_seconds": 0.15000000596046448,
+    "gamepad": {
+      "movement": "An accepted touch starting in controlsHitbox joins the movement set; Sign(touchX-hitboxCenterX) is summed and clamped with Math.Sign",
+      "jump": "Other accepted touches on the GamepadController raycast surface join the jump set; held member sets isJumping",
+      "simultaneous_movement_and_jump_supported": true,
+      "default_control_rect": {
+        "anchorMin": [
+          0,
+          0
+        ],
+        "anchorMax": [
+          0,
+          0
+        ],
+        "anchoredPosition": [
+          150,
+          100
+        ],
+        "size": [
+          564,
+          216
+        ],
+        "pivot": [
+          0,
+          0
+        ]
+      },
+      "coordinate_limit": "These are Unity UI local coordinates. Parent canvas scaling, safe area, user control-position settings and the actual device must be observed/calibrated before issuing touches.",
+      "evidence": [
+        "level1/3317 GamepadController",
+        "level1/2767 Controls RectTransform",
+        "level1/2799 Controls Hitbox RectTransform",
+        "GamepadController.bvz raw0x3505340..0x35056CC"
+      ]
+    },
+    "joystick": {
+      "movement": "On Began, a touch on JoystickController inside the scaled joystick acceptance radius claims joystick.touchingFingerID; movement updates for that finger",
+      "jump": "Other accepted touch IDs are in a jump HashSet, and held members set isJumping",
+      "evidence": [
+        "level1/3240 JoystickController",
+        "level1/3592 Joystick",
+        "JoystickController.byu raw0x350A7A0..0x350ABA4"
+      ]
+    },
+    "jump_edges": {
+      "request": "jumpBuffer is reset only on held && !previousHeld, then previousHeld=held",
+      "implication": "Additional jumps require a release/repress edge; an uninterrupted held touch does not create repeated jump requests",
+      "hold_semantics": "Held state is also read by PlatformerHull.FixedUpdate, so hold duration affects the jump behavior; do not replace all holds with zero-duration taps",
+      "evidence": [
+        "InputManager.Update raw0x3509878..0x35098AC",
+        "InputManager.byf raw0x3508D3C",
+        "InputManager.byg raw0x3508DA8",
+        "PlatformerHull.FixedUpdate raw0x34FD1A8 and0x34FD23C"
+      ]
+    },
+    "attack_button_verified": false,
+    "attack_limit": "No independent attack control exists in the inspected Gamepad/Joystick classes. Equipment and entity combat logic control firing/contact attacks; a fabricated attack coordinate must not be used."
+  },
+  "crawler": {
+    "source": "resources.assets/7991, Crawler MB17937, body Collider11104",
+    "input_scheme": 0,
+    "body_size": [
+      0.8999999761581421,
+      0.8999999761581421
+    ],
+    "body_offset": [
+      0,
+      -0.1599999964237213
+    ],
+    "step_height": 0.5009999871253967,
+    "coyote_time": 0.20000000298023224,
+    "max_fall_velocity": 12.0,
+    "jump_gravity_multiplier": 1.5,
+    "fall_gravity_multiplier": 3.0,
+    "air_acceleration_multiplier": 1.0,
+    "runtime_stats": "jumps, jumpPower, moveSpeed, health, contactDamage and contactRange come from the selected HullStats/equipment. The prefab has zero placeholders for many runtime stats; they are not valid live values."
+  },
+  "observables": {
+    "hud_fields": {
+      "healthBar": "level1/3942",
+      "healthBarBackground": "level1/3902",
+      "shieldBar": "level1/3480",
+      "shieldBarBackground": "level1/3401",
+      "titleTopText": "level1/3034",
+      "titleBottomText": "level1/2949",
+      "titleBoostText": "level1/3093"
+    },
+    "hud_source": "HUDManager level1/3235",
+    "colors": "PlayerStats supports separate configurable player/enemy core colors and inversion; default semantic IDs are 0 DefaultPlayer and 1 DefaultEnemy, but arbitrary named colors exist. A fixed blue-player/red-enemy detector needs explicit support/calibration and cannot be claimed universal.",
+    "recording_observation": "video-01-008.png visibly shows lower-left left/right arrow controls, upper-left health/shield bar, upper-right pause icon, LOST SCRAPYARD and Frozen \u26055 title, a spider-like player hull with blue core and gold body. These are observations of that recording, not universal UI coordinates.",
+    "external_state_limit": "Serialized HUD fields and native static fields identify mechanics, but are not an external automation API. No memory-reading interface is asserted."
+  },
+  "controller_constraints": [
+    "Observe/calibrate actual touch targets for the selected scheme and resolution before first input",
+    "Implement jump release/repress edges and simultaneous move+jump gestures",
+    "Do not assume the number of air jumps from old farmer settings; actual loadout must be configured or observed",
+    "Detect and release inputs when the foreground package, orientation or selected screen is unexpected",
+    "Treat unseen state/color variants as unsupported instead of issuing blind movement"
+  ],
+  "artifacts": [
+    "controls-assets.json",
+    "controls-native/",
+    "CONTROLS-FINDINGS.md"
+  ]
+}

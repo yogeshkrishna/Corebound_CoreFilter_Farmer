@@ -1,33 +1,37 @@
 param(
-    [string[]]$Tasks = @('assembleDebug', 'testDebugUnitTest', 'lintDebug')
+    [string[]]$Tasks = @(':engine:test', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug'),
+    [string]$Jdk = $env:JAVA_HOME,
+    [string]$Sdk = $env:ANDROID_HOME
 )
-
 $ErrorActionPreference = 'Stop'
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$localJdk = Get-ChildItem -LiteralPath (Join-Path $projectRoot '.toolchain\jdk') -Directory -ErrorAction SilentlyContinue |
-    Where-Object { Test-Path (Join-Path $_.FullName 'bin\java.exe') } | Select-Object -First 1
-if ($localJdk) {
-    $env:JAVA_HOME = $localJdk.FullName
+$project = Split-Path -Parent $PSScriptRoot
+function Test-Jdk17([string]$Directory) {
+    if (-not $Directory -or -not (Test-Path -LiteralPath (Join-Path $Directory 'bin/javac.exe'))) { return $false }
+    $release = Join-Path $Directory 'release'
+    return (Test-Path -LiteralPath $release) -and [bool](Select-String -LiteralPath $release -Pattern '^JAVA_VERSION="17[.\-"]' -Quiet)
 }
-if (-not $env:JAVA_HOME -or -not (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
-    throw 'Set JAVA_HOME to JDK 17 or newer, or run tools\setup-toolchain.ps1 first.'
+if (-not (Test-Jdk17 $Jdk)) {
+    $candidate = Join-Path (Split-Path -Parent $project) '.toolchain/jdk'
+    $found = Get-ChildItem -LiteralPath $candidate -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Jdk17 $_.FullName } | Select-Object -First 1
+    if ($found) { $Jdk = $found.FullName }
 }
-
-$localSdk = Join-Path $projectRoot '.toolchain\android-sdk'
-if (Test-Path (Join-Path $localSdk 'platforms\android-35\android.jar')) {
-    $env:ANDROID_HOME = $localSdk
+if (-not $Sdk) {
+    $candidate = Join-Path (Split-Path -Parent $project) '.toolchain/android-sdk'
+    if (Test-Path -LiteralPath $candidate) { $Sdk = $candidate }
 }
-if (-not $env:ANDROID_HOME) {
-    throw 'Set ANDROID_HOME to an Android SDK with platform 35, or run tools\setup-toolchain.ps1 first.'
-}
-
-Push-Location $projectRoot
+if (-not (Test-Jdk17 $Jdk)) { throw 'JDK 17 is required. Set JAVA_HOME to JDK 17, or pass -Jdk.' }
+if (-not $Sdk -or -not (Test-Path -LiteralPath (Join-Path $Sdk 'platforms/android-35/android.jar'))) { throw 'Install Android SDK platform 35 and Build-Tools 35.0.0, then set ANDROID_HOME or pass -Sdk.' }
+$previousJava = $env:JAVA_HOME
+$previousAndroid = $env:ANDROID_HOME
+Push-Location $project
 try {
-    & (Join-Path $projectRoot 'gradlew.bat') @Tasks --console=plain
-    if ($LASTEXITCODE -ne 0) { throw "Gradle failed with exit code $LASTEXITCODE." }
-    if ($Tasks -contains 'testDebugUnitTest' -or $Tasks -contains 'test' -or $Tasks -contains 'check' -or $Tasks -contains 'build') {
-        & (Join-Path $PSScriptRoot 'test-vision.ps1')
-    }
+    $env:JAVA_HOME = $Jdk
+    $env:ANDROID_HOME = $Sdk
+    & '.\gradlew.bat' @Tasks --console=plain --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "Build/check failed with exit code $LASTEXITCODE." }
 } finally {
     Pop-Location
+    $env:JAVA_HOME = $previousJava
+    $env:ANDROID_HOME = $previousAndroid
 }

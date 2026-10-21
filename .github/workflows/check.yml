@@ -1,0 +1,55 @@
+name: Pilot checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pilot-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Engine, Android and packaging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          cmdline-tools-version: '12266719'
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install Android platform and build tools
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Check Java formatting
+        shell: bash
+        run: |
+          formatter="$RUNNER_TEMP/google-java-format.jar"
+          curl --fail --silent --show-error --location 'https://repo.maven.apache.org/maven2/com/google/googlejavaformat/google-java-format/1.24.0/google-java-format-1.24.0-all-deps.jar' --output "$formatter"
+          printf '%s  %s\n' '812f805f58112460edf01bf202a8e61d0fd1f35c0d4fabd54220640776ec57a1' "$formatter" | sha256sum --check -
+          git ls-files -z '*.java' | xargs -0 java -jar "$formatter" --dry-run --set-exit-if-changed
+      - name: Test source packaging
+        run: python3 -m unittest discover -s tools -p test_package.py -v
+      - name: Test, lint and build
+        run: ./gradlew :engine:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease --no-daemon
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: pilot-check-reports
+          path: |
+            engine/build/reports/tests
+            app/build/reports
+          retention-days: 14

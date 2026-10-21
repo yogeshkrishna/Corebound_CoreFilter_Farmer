@@ -4,3 +4,11 @@ gradlew text eol=lf
 *.sh text eol=lf
 *.png binary
 *.jar binary
+*.java text eol=lf
+*.gradle text eol=lf
+*.properties text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf

@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-21",
+  "version": "1.0.0-rc1",
+  "scope": "Initial Windows host verification; Java/Android logic unchanged during repository-root migration. Current hosted checks are linked separately.",
+  "tests": {
+    "engine": {
+      "tests": 73,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "androidRobolectric": {
+      "tests": 47,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "totalTests": 120,
+  "lint": {
+    "debug": {
+      "errors": 0,
+      "warnings": 13,
+      "warningCategories": {
+        "UnusedAttribute": 1,
+        "DiscouragedApi": 1,
+        "ChromeOsAbiSupport": 1,
+        "DataExtractionRules": 1,
+        "ClickableViewAccessibility": 1,
+        "SetTextI18n": 8
+      }
+    },
+    "release": {
+      "errors": 0,
+      "warnings": 13,
+      "warningCategories": {
+        "UnusedAttribute": 1,
+        "DiscouragedApi": 1,
+        "ChromeOsAbiSupport": 1,
+        "DataExtractionRules": 1,
+        "ClickableViewAccessibility": 1,
+        "SetTextI18n": 8
+      }
+    }
+  },
+  "build": {
+    "debug": "passed",
+    "releaseMinified": "passed",
+    "formatter": "passed",
+    "engineJavacWarningsAsErrors": true,
+    "cleanSourceArchiveCompilation": "passed: engine and app release Java, fresh extraction"
+  },
+  "benchmark": {
+    "iterations": 40,
+    "validDetections": 40,
+    "medianMs": 43.818,
+    "p95Ms": 55.241,
+    "maxMs": 56.112,
+    "scope": "JVM replay during build, not phone throughput or farming rate"
+  },
+  "apk": {
+    "file": "CoreFilterPilot-1.0.0-rc1.apk",
+    "debuggable": false,
+    "signatureSchemeV3Verified": true,
+    "zipAlignment16KBVerified": true,
+    "nativeLoadSegmentAlignments": {
+      "lib/arm64-v8a/libmlkit_google_ocr_pipeline.so": [
+        16384,
+        16384,
+        16384
+      ]
+    },
+    "internetPermission": false,
+    "distributionManifest": "Use SHA256SUMS.txt and artifacts.json from the published release for current binary hashes and sizes."
+  },
+  "oldProject": {
+    "filesChecked": 161,
+    "changed": []
+  },
+  "recordedInputs": {
+    "video": "video-01.mp4",
+    "frames": [
+      516,
+      528,
+      540,
+      552
+    ],
+    "analysisSize": [
+      640,
+      295
+    ],
+    "scope": "Calibrated Crawler tracking and nearby terrain probes only"
+  },
+  "liveFarmingVerified": false,
+  "connectedDevices": 0,
+  "remainingGate": "Supervised ARM64 phone trial: capture/OCR/gestures/menu loop, sustained patrol, actual inventory increase and coverage measurements",
+  "hostCaveat": "Robolectric uses Windows filesystems; fixture replacement avoids AtomicFile rename-over-existing, while actual Android/Linux replace semantics remain a device test.",
+  "distribution": {
+    "sourceCrcAndByteComparison": "passed",
+    "deterministicSourceArchive": "passed",
+    "privateFilesExcluded": "passed",
+    "artifactChecksums": "passed"
+  },
+  "hostedChecks": "https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml",
+  "packagingTests": {
+    "tests": 5,
+    "failures": 0,
+    "scope": "Output validation, deterministic archives and private/build-file exclusion"
+  }
+}
