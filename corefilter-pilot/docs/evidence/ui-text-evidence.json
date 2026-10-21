@@ -1,0 +1,66 @@
+[
+  {
+    "id": 2917,
+    "strings": [
+      "<nobr><sprite=0><font=black><color=#FD91F4> 5"
+    ]
+  },
+  {
+    "id": 2931,
+    "strings": [
+      "Claimed"
+    ]
+  },
+  {
+    "id": 2947,
+    "strings": [
+      "Claimed"
+    ]
+  },
+  {
+    "id": 2979,
+    "strings": [
+      "Do you want to <font=black><color=#FDFD84>watch a short video</font></color> for <font=black><color=#FDFD84>14 bonus items</font></color>?"
+    ]
+  },
+  {
+    "id": 3082,
+    "strings": [
+      "Destroyed!"
+    ]
+  },
+  {
+    "id": 3091,
+    "strings": [
+      "Watch Ad?"
+    ]
+  },
+  {
+    "id": 3294,
+    "strings": [
+      "Normal",
+      "Highlighted",
+      "Pressed",
+      "Selected",
+      "Disabled"
+    ]
+  },
+  {
+    "id": 3364,
+    "strings": []
+  },
+  {
+    "id": 3824,
+    "strings": []
+  },
+  {
+    "id": 3984,
+    "strings": [
+      "Normal",
+      "Highlighted",
+      "Pressed",
+      "Selected",
+      "Disabled"
+    ]
+  }
+]

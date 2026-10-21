@@ -1,0 +1,108 @@
+{
+  "package": "com.Overcurve.Corebound",
+  "version": "1.2.1.1",
+  "version_code": 140,
+  "inspection": "Static ARM64 native code and serialized asset inspection; game not executed",
+  "address_convention": "All evidence addresses are raw libil2cpp.so file offsets. Executable ELF VA = raw offset + 0x4000.",
+  "layout": {
+    "kind": "Random assembly of fixed authored room grids",
+    "initial_anchor": [0, 0],
+    "initial_flipped": false,
+    "sector_length": 3,
+    "target_room_count": "sectorCount * sectorLength + 1",
+    "sector_count": "Runtime selected configuration/progress record; not inferred from recordings. Alternate branch uses 1.",
+    "candidate_rules": [
+      "Different RoomData asset from immediately previous room",
+      "Cannot have two consecutive isShort rooms",
+      "Entrance height equals selected exit height",
+      "candidate.hasGate == (placedCount % sectorLength == 0)",
+      "candidate.minSectorsFromEnd <= remaining sectors",
+      "Reject room rectangle overlap and apply 2-unit vertical clearance when horizontal bounds overlap",
+      "Backtrack when candidates exhausted"
+    ],
+    "weighted_order_key": "-logf(float(Random.NextDouble())) / room.weight, with priority key",
+    "scrapyard_weights": "All 20 templates weight=1, priority=0, minSectorsFromEnd=0",
+    "next_flip": "previousFlip XOR (nextEntrance.side == previousExit.side)",
+    "door_sides": {"Left": 1, "Right": -1},
+    "seam": "next entrance bottom cell center = previous exit bottom cell center + (-exit.side * (previousFlip ? -1 : 1),0)",
+    "evidence": ["0x3467678..0x34676A4", "0x3467618..0x3467674", "0x34642AC", "0x3463678..0x3463864", "0x3467B14..0x346875C"]
+  },
+  "coordinates": {
+    "array_order": "tiles[i + width*j], j bottom-up",
+    "normalized_cell_center": "(i, j-height)",
+    "world_cell_center": "((flipped ? -i : i)+ox-(flipped ? 1 : 0), j+oy-height)",
+    "world_marker": "((flipped ? -x : x)+ox-(flipped ? 1 : 0), y+oy)",
+    "zero_anchor_reflection": "x'=-x-1",
+    "tile_edges": "center +/- 0.5",
+    "authoring_bounds_position_used_for_placement": false,
+    "rotation": false,
+    "vertical_flip": false,
+    "rescaling": false,
+    "evidence": ["RoomPlan.ctor 0x3428C74", "RoomPlan.esc 0x3428D2C", "RoomPlan.esb 0x3428DE8"]
+  },
+  "terrain": {
+    "filled_enum": 1,
+    "non_solid_enum_values": [0, 2, 3, 4, 5, 6],
+    "main_tile_collider_type": 2,
+    "main_tile_collider_meaning": "Grid: full unit square",
+    "main_tile_set": "resources.assets/16354 0_scrapyard_baked",
+    "decorative_tile_collider_type": 0,
+    "outside_room_padding": 18,
+    "padding_rule": "For each room, transform every local cell [-18,w+18) x [-18,h+18); add positions outside the union of all room grids as solid main-layer terrain",
+    "padding_does_not_fill_authored_air": true,
+    "evidence": ["0x3468A7C..0x3468C68", "sl.PopulatePaddingTiles.Execute 0x345FCF8", "ss.ctor 0x3463864, constant raw0xB94780", "0x3469EF8..0x346A00C", "0x342507C..0x3425090", "PrecomputedTile.gqz 0x34BCA70..0x34BCBC8"]
+  },
+  "platforms": {
+    "authored_count": 13,
+    "one_way": true,
+    "surface_arc_degrees": 170,
+    "all_nonbreakable": true,
+    "effective_anchor": "A=transformed marker.left; if connectingLeft A.x += flipped ? 1 : -1",
+    "effective_width": "W=marker.width + int(connectingLeft) + int(connectingRight)",
+    "center": "(A.x + (flipped ? -(W/2-.5) : W/2-.5), A.y+.3125)",
+    "unmirrored_x_bounds": "[A.x-.5,A.x+W-.5]",
+    "flat_top_above_marker": 0.510000005364418,
+    "endcap_top_above_marker": 0.48999999463558197,
+    "bottom_above_marker": 0.125,
+    "support_posts_collide": false,
+    "evidence": ["Platform.gqt 0x34BBC00", "sharedassets1.assets/1074 PolygonCollider2D", "sharedassets1.assets/1958 PlatformEffector2D", "Support GO549 hierarchy"]
+  },
+  "gates": {
+    "authored_count": 7,
+    "width": 0.75,
+    "transform": "(A.x,A.y-.5)",
+    "collider_offset": "(0,H/2)",
+    "closed_bounds": "[A.x-.375,A.y-.5,A.x+.375,A.y+H-.5]",
+    "open_state": "collider disabled",
+    "closed_state": "collider enabled",
+    "evidence": ["Gate.gll 0x34951B8..0x34954B4", "Gate.Open 0x3495C44..0x3495C54", "Gate.Close 0x3497098..0x34970A8", "sharedassets1.assets/1102 BoxCollider2D"]
+  },
+  "transitions_and_other_objects": {
+    "transitions": 7,
+    "transition_size": [2, 4],
+    "reserved_subground_cells": 56,
+    "transition_colliders_are_triggers": true,
+    "spawn_pile_has_collider": false,
+    "breakable_ground_prefab_collider_is_trigger": true,
+    "breakable_ground_authored_in_scrapyard": false,
+    "evidence": ["Beginning Trigger GO600", "Ending Trigger GO305", "Spawn Scrap Pile GO682", "BreakableGround GO576 / BoxCollider1093", "BreakableGround.gkz 0x34932E0"]
+  },
+  "camera": {
+    "base_orthographic_size": 5.5,
+    "aspect_reference": "16/9",
+    "orthographic_formula": "5.5 * cameraSizeMultiplier * dampedSecondaryMultiplier / max((screenWidth/screenHeight)/(16/9),1)",
+    "pixels_per_unit_formula": "screenHeight/(2*orthographicSize)",
+    "recording_resolution": [2344, 1080],
+    "base_zoom_pixels_per_unit": 119.86363636363636,
+    "base_zoom_pixels_per_unit_fraction": "2637/22",
+    "tile_sprite_source_pixels_per_unit": 192,
+    "evidence": ["CameraManager.LateUpdate 0x341C750..0x341C7F0", "CameraManager.ctor 0x341E110, constant raw0xB959C0", "serialized CameraManager level1/4028"]
+  },
+  "limits": [
+    "Recorded game version, live room sequence and seed are not established by this audit",
+    "Selected runtime sector count is not extracted from the recordings",
+    "No seed-exact runtime recreation or player reachability simulation is claimed",
+    "Player contact tolerances are separate from authored geometry",
+    "Raster dimensions require rounding; exact geometry is retained in world coordinates and SVG"
+  ]
+}
