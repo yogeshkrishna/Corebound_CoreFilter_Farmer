@@ -1,41 +1,91 @@
-# Ceiling Scout
+# Core Filter Pilot
 
-Android farmer and live laptop mapper for **Corebound → Lost Scrapyard → Frozen ★5**.
+An independent Android application for a calibrated, closed-loop Lost Scrapyard farming patrol. This is **1.0.0-rc1**: the APK builds and the automated checks and recorded-image replay are exercised; **live farming and Core Filter acquisition have not been verified on a connected phone**. It should receive a supervised phone trial before unattended use or a production-release claim.
 
-**[Download the latest release](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/latest)** — `Ceiling-Scout.apk` for Android 11+, `Ceiling-Scout-Studio.zip` for the laptop.
+## Install and run
 
-## Offline mapping (0.6.0)
+Use the signed `CoreFilterPilot-1.0.0-rc1.apk` from the release package. Install it alongside the previous farmer: its package is `dev.corefilter.pilot`, so it does not replace or read that application's storage.
 
-Record a full run, then build and export its map entirely on your Android phone. No Wi-Fi, laptop, account or network connection is needed for recording or processing.
+1. Open Pilot and enable **Core Filter Pilot controls** under Android Accessibility. A sideloaded app may first require **App info → menu → Allow restricted settings**. Pilot explains its screen-observation and touch capabilities before opening Settings.
+2. In Corebound **1.2.1.1**, use the **left/right button** control scheme, equip your chosen contact-damage build and select **Lost Scrapyard** with your chosen boost. Enter a run. This application does not buy equipment or change boosts.
+3. From the floating bar, tap **Calibrate**. On the frozen image, choose the left button, right button, a clear jump area, the center of the player's textured body/core, and an interior patch of the **main solid floor**. Use a patch away from edges, platforms and background scenery. Save and return to the game.
+4. Set the actual number of **additional air jumps** in Pilot if your equipment provides them. The default is zero; seven jumps are not assumed. Press **Run** on the floating bar.
+5. **Pause/Resume** preserves the session counters and rechecks the current screen. **Stop** ends the session and hides the bar. Reopen Pilot → **Show floating controls** to bring it back.
 
-1. Update through **Check for updates → Download & install**, then confirm Android's installer. Install over the existing app to retain build and calibration. You can also download `Ceiling-Scout.apk` from the latest release.
-2. Enable **Ceiling Scout controls** in Android Accessibility if disconnected. Choose **Use offline mapper**, then **Record a map** and accept Android's screen-capture prompt.
-3. Play Corebound manually. Cover every corridor, high ceiling, shaft and turn. The floating **Stop** button ends recording. You handle rewards and ads.
-4. Return to Ceiling Scout → **Recorded maps · build, preview & export** → **Build / Resume map**. Stop capture first. Progress remains visible in the app and foreground notification while processing runs in the background. Pause and resume if needed.
-5. Once complete, choose **View map & save PNG**, select a section, then **Save native PNG** and choose a destination. Export continues in the background; reopening Recorded maps shows its result. The display preview is fitted, but export retains original pixel dimensions.
+Recalibrate after changing the hull/core appearance, controls, game display layout or aspect ratio. Normal touch input can cancel an automated gesture; repeated cancellations pause the session. An issued touch lasts at most the configured pulse (160 ms by default); stopping prevents further touches and lets that finite pulse release.
 
-Original PNGs, capture metadata, cached features, camera constraints/positions and native tiles stay in app-private storage. Delete this recording removes a selected run after confirmation; exported PNGs remain saved. Uninstalling or clearing app storage removes all private recordings. **Share original recording** prepares a ZIP containing this evidence for a destination you choose. Recording stops when less than 256 MB remains. Capture targets up to eight frames per second, skips while a PNG is being saved, and ignores other apps and portrait frames. Actual rate depends on your phone's encoding and storage speed.
+## What the program does
 
-Batch analysis first tracks adjacent views, then checks revisits against the whole recording and refines translation constraints. It never scales or rotates map pixels. Terrain is assembled in bounded 512 × 512 tiles, with only one section's cache resident. Feature analysis is released before rendering. PNG export uses temporary disk bands and streams native rows, avoiding a full-map bitmap. The display preview is capped at 1024 pixels on its longest side and may shrink further to fit memory. Preview preparation does not block native export if memory remains too low. Weak or conflicting joins stay in separate sections. Missing observations remain transparent. Native scale does not guarantee full coverage or perfect registration, and extra processing cannot recover unseen ceilings. The real phone/game still needs a trial.
+- Captures the game through Android's accessibility screenshot API; performs sampled normalized-correlation player tracking, calibrated foreground probes and camera-motion estimation locally at a 640-pixel analysis width.
+- Patrols visible corridors with separate movement and jump touches, checks floor/ceiling observations, respects the configured air-jump request budget, turns during bounded stuck recovery and pauses if perception remains uncertain.
+- Uses the recovered camera scale, including wide-screen correction, rather than hardcoded recording coordinates. Physical tile units are independent of the 192-pixel source artwork.
+- Recognizes English result screens, confirms them with two distinct fresh text observations, selects a verified **Continue/Retry** button, and can select Lost Scrapyard and press **PLAY** only when its actual description confirms selection. Menu taps require observed transitions and have bounded retries. Paid/unrelated confirmations pause.
+- Optionally accepts a recognized free **Watch Ad?** dialog. It closes an ad only when both completion text and a **Close** button are positively recognized. Unknown SDK formats and external store screens require manual handling. It does not automatically select unverified bonus offers.
+- Runs one capture/vision operation and one finite gesture at a time, never a blind route of queued inputs. OCR is single-flight and at most once per second. Capture cadence adapts downward if measured vision CPU cost is high. Paused/stopped sessions perform no polling.
+- Keeps a bounded local diagnostic history. **Share local diagnostics** opens Android's share chooser; the report contains state/action summaries, not screenshots, templates or inventory data. No diagnostic is uploaded automatically. The merged application removes the Internet permission from OCR dependencies; their normal network-state permission remains declared.
 
-Android may interrupt long background jobs or the phone vendor may restrict them. Resume from Recorded maps; features, matching progress and completed tile frames are cached. Android 15 limits this foreground processing service to its daily time budget. The phone APK supports ARM64 Android 11+ devices. Native emulator tests include x86_64 with the explicit `-PscoutEmulator` build option.
+## What is established about Core Filters
 
-## Optional live laptop mapping
+The audited APK defines 11 Core Filter variants. Lost Scrapyard's secret enemy **Spectrum** has eight variants in its loot table: black, purple, yellow, green, white, pink, orange and mint. This does **not** establish that each kill guarantees a filter, that all 11 variants can be farmed there, or that a particular boost maximizes filters/hour. Boost changes relic-drop thresholds and combat difficulty; no fastest loadout or rate has been measured.
 
-Live streaming remains available under **Optional · live laptop connection**. Extract `Ceiling-Scout-Studio.zip`, open **Start Studio.cmd**, connect both devices to the same Wi-Fi, paste the Studio link under **Connect laptop**, and press **Start live capture**. Studio saves originals and reconstructs concurrently. Its link persists across restarts; a changed laptop IP needs reconnection. Python 3.12+ is required for first setup. See [Studio setup](laptop/README.md) and [capture protocol](docs/live-mapping.md). Existing laptop recordings are not imported into the offline mapper.
+Collection invokes the game's inventory-add path. A vanished enemy, item offer, filter label or completed run does not prove acquisition. Pilot reports **runs ended** and **Core Filter label screens**, never a fabricated earned-filter total. It does not read private save files or call Unity methods inside the game. Evidence and native offsets are in [docs/evidence](docs/evidence).
 
-## Farming
+## Support boundaries
 
-Choose **Use farmer**, select Lost Scrapyard with Frozen ★5 in Corebound, then press **Run**. Enable **Ceiling Scout controls** in Android Accessibility if needed. Sideloaded apps may require **App info → menu → Allow restricted settings** first. The bar has Run/Pause and **•••**, with Build, Calibrate and Stop & hide in its menu. Drag the status text to move it.
+- Target: ARM64 Android phones, Android 11/API 30 or newer; compiled/targeted with API 35. Corebound package `com.Overcurve.Corebound`, version **1.2.1.1 / build 140**, English UI, landscape and gamepad/button input. Other installed game versions are rejected rather than silently assumed compatible.
+- The supplied recorded replay tests cover a calibrated Crawler appearance. Different hulls, equipment, lighting and devices need their own phone validation and calibration. Phone throughput, screenshot support and OCR accuracy have not been measured here.
+- Navigation is a **reactive visual patrol**. It does not reconstruct a run's random seed, guarantee exploration of every upper cavern, identify every Spectrum, verify every pickup or guarantee a sustainable farming rate. The exact 20-room library does not reveal a live run's room sequence, so the program does not pretend it does.
+- Unknown menus, loading beyond a minute, changed foreground/display, poor tracking, unrecognized ads, three consecutive late captures, input/capture callback timeouts and exhausted recovery budgets pause or stop. Text recognition has a 15-second watchdog; if the SDK remains unresponsive, re-enable Pilot's accessibility service to recreate it. App termination does not auto-resume. There is no invasive game modification, root requirement, account access, automatic purchasing, ad-coordinate guessing, or updater.
+- No phone/emulator was connected for a live target run during development. Automated and recorded-input success is not live farming success. This release candidate's remaining gate is a supervised physical-phone test of the full loop and actual inventory change.
 
-The farmer jump-moves through visible corridors, uses air jumps for hidden roofs, attempts Ember contacts, revisits unresolved enemies, handles observed drops/turns, and repeats recognized runs. Core-filter reward ads are watched when the displayed offer is recognized. Countdown/close/end-card handling and bounded Play Store recovery are separate. Unknown screens can need manual intervention.
+## Build and check
 
-The supplied build has **three Magmatic ★7+ Hookshots: seven jumps**. Edit equipment and timings through **Edit build & farming settings**. Notes do not calculate damage. Calibrate once if automatic control location is wrong. Recorded maps are not yet used to steer farming. See [controller details](docs/navigation.md).
+Requirements: **JDK 17**, Android SDK **platform 35** and **Build-Tools 35.0.0**. Set `JAVA_HOME` and `ANDROID_HOME`; Gradle 8.9 is supplied through the checksum-pinned standard wrapper. Dependencies are pinned in the module build files. The original farmer is not a build dependency.
 
-## Updates and development
+On Windows PowerShell, from this directory:
 
-Use **Check for updates → Download & install**. Downloads show MB and speed, reconnect with saved progress, and run in the background. Tap Check for updates again to reopen an active download. Android still requires installation confirmation. The app verifies checksum, identity, version and original signing certificate. If an older updater is stuck, force-stop the app and install the latest release APK over it once. See [release instructions](docs/updates.md).
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
+```
 
-`tools\setup-toolchain.ps1` prepares the Android toolchain; `tools\build.ps1` builds the APK and runs Android/recorded-vision/navigation checks. Install `laptop/requirements.txt`, then run `python -m unittest discover -s laptop/tests -v` for Studio. `python laptop/package.py --output dist/Ceiling-Scout-Studio.zip` packages laptop source without keys or recordings.
+The script also accepts `-Jdk <directory> -Sdk <directory>`. In this workspace it can discover the existing sibling toolchain without embedding its personal path. Direct equivalent:
 
-Tag releases verify Android, Studio and the original signer, then publish the APK, checksum and Studio ZIP. These checks validate specific capture, storage and reconstruction cases. Live capture and actual map coverage still need a phone trial; they do not establish error-free or unattended play.
+```text
+gradlew.bat :engine:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+The installable development build is `app/build/outputs/apk/debug/app-debug.apk`. For a minimized release build:
+
+```text
+gradlew.bat :engine:test :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+```
+
+Gradle deliberately leaves that release APK unsigned. Sign it with your own Android release key using SDK `apksigner`, then verify it. The provided local release APK has a separate local signing identity; its private key is excluded from source/distribution archives. Keep its key backup if you intend to issue compatible updates; never publish it.
+
+In the development checkout, that local key and its password file are stored under `.local/signing/`. They are deliberately absent from the source ZIP.
+
+With JDK 17 and `ANDROID_HOME` set, the signing helper accepts an existing keystore and password file without putting the password on the command line:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\sign.ps1 -KeyStore path\to\release.jks -PasswordFile path\to\password.txt
+```
+
+It defaults to alias `pilot-release` (override with `-Alias`) and verifies the signature and 16 KB ZIP alignment. Key creation and custody remain with the distributor.
+
+Optional development commands:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tools\format.ps1 -Check
+.\gradlew.bat :engine:benchmark
+python .\tools\package.py --apk path\to\signed.apk
+```
+
+The formatter is checksum-pinned. Packaging requires Python 3.12+, checks archive contents, excludes build caches/local credentials, and emits SHA-256 checksums. CI is included for a checkout whose root is this directory; that hosted workflow is defined but has not been run here.
+
+## Tests and diagnostics
+
+The pure Java engine tests exercise state confirmation, stale/duplicate observations, pending acknowledgments, retries, session/loading/unknown deadlines, external-app and orientation guards, ad/purchase boundaries, jump budgets, correlation matching, camera motion and actual recorded-image replay. Android Robolectric tests exercise configuration persistence/corruption/atomic writes, bounded snapshot validation, read-only diagnostic grants and simultaneous finite gesture construction. The benchmark reports **JVM replay timing**, not phone FPS or filters/hour. See [validation](docs/VALIDATION.md) for measured results and remaining checks.
+
+If controls are disconnected, enable the accessibility service again. For repeated capture errors, check whether screen capture is restricted by the device, then disable/re-enable Pilot controls. If tracking or foreground probes fail, stop, capture a clear frame and recalibrate on the actual player and main floor. If menus/ads remain unknown, resolve them manually and resume; automatic repeated tapping is intentionally bounded. Corrupt settings can be reset with **Restore default settings**, while calibration can be reset separately.
+
+The application does not depend on the earlier farmer's code, settings, signing identity, capture cache, mapper or server. Only the unmodified, standard Gradle wrapper tooling was copied; game facts were re-established from the copied APK and supplied recordings. No license or ownership grant is asserted by this project.
