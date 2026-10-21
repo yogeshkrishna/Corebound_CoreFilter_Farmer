@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = 'CoreFilterPilot'
-include ':engine'
+include ':engine', ':app'
