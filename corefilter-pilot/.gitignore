@@ -1,5 +1,9 @@
 .gradle/
 .local/
+.toolchain/
+**/__pycache__/
+*.py[cod]
+*.log
 **/build/
 local.properties
 .idea/
