@@ -1,11 +1,12 @@
 # Release candidate validation
 
-Checked on **2026-10-21**, on the Windows development host. Machine-readable results are in [validation.json](validation.json). This is a buildable, signed **1.0.0-rc1**, with live-phone validation still outstanding.
+Initial validation was performed on **2026-10-21**, on the Windows development host. Machine-readable results are in [validation.json](validation.json). This is a buildable, signed **1.0.0-rc1**, with live-phone validation still outstanding. Current hosted results are available in [Pilot checks](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml).
 
 | Check | Result |
 | --- | --- |
 | Pure Java engine suite | 73 passed; zero failures, errors or skips |
 | Android API 35 Robolectric suite | 47 passed; zero failures, errors or skips |
+| Source packaging regression suite | 5 passed; invalid output locations, deterministic archives and private-file exclusions |
 | Java compilation | Java 17; engine uses all javac warnings as errors |
 | Formatting | Checksum-pinned Google Java Format 1.24.0 check passed |
 | Android lint, debug and release | Zero errors; 13 warnings per variant |
@@ -38,13 +39,9 @@ From the project directory, use the documented PowerShell build helper, or run t
 gradlew.bat :engine:test :engine:benchmark :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
 ```
 
-`tools/format.ps1 -Check` verifies formatting. `tools/sign.ps1` signs with a distributor-owned key and checks the resulting signature and alignment. `tools/package.py --apk <signed-apk>` creates the source archive and checksums. The included GitHub workflow has not been executed on a hosted runner.
+`tools/format.ps1 -Check` verifies formatting. `tools/sign.ps1` signs with a distributor-owned key and checks the resulting signature and alignment. `tools/package.py --apk <signed-apk>` creates the source archive and checksums. `python -m unittest discover -s tools -p test_package.py -v` runs five packaging regression tests. Hosted CI runs these checks on each pull request and on `main`; its result is recorded in GitHub Actions.
 
-The release APK is **14,041,324 bytes**. Its SHA-256 is:
-
-```text
-98ee3eb3917099b23d195efa43945c0f6e352a2494fb01bedf36614e93f86dde
-```
+Published APK/source sizes and SHA-256 hashes are recorded in the release's `artifacts.json` and `SHA256SUMS.txt` assets. Use those manifests for the distributed build; source migration and embedded Git metadata can change a rebuilt APK's hash without changing its application logic.
 
 ## Remaining real-world gate
 

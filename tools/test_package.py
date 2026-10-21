@@ -105,7 +105,7 @@ class PackageTest(unittest.TestCase):
 
     def test_custom_output_and_private_build_files_are_excluded(self):
         self.write('README.md', b'Public source')
-        private = ['.git/config', '.gradle/cache.bin', '.local/signing/pass.txt',
+        private = ['.git/config', '.gradle/cache.bin', '.local/signing/pass.txt', '.toolchain/sdk/tool',
                    'app/build/output.bin', 'dist/old-artifact.txt', '__pycache__/cached.pyc',
                    '.idea/options.xml', 'local.properties', '.env', '.env.production',
                    'release-password.txt', 'release.jks', 'release.keystore',

@@ -1,5 +1,9 @@
 # Core Filter Pilot
 
+[![Pilot checks](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml)
+
+**[Download 1.0.0-rc1](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/releases/tag/v1.0.0-rc1)** · [Moving from Ceiling Scout](docs/MIGRATION.md)
+
 An independent Android application for a calibrated, closed-loop Lost Scrapyard farming patrol. This is **1.0.0-rc1**: the APK builds and the automated checks and recorded-image replay are exercised; **live farming and Core Filter acquisition have not been verified on a connected phone**. It should receive a supervised phone trial before unattended use or a production-release claim.
 
 ## Install and run
@@ -48,7 +52,7 @@ On Windows PowerShell, from this directory:
 powershell -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-The script also accepts `-Jdk <directory> -Sdk <directory>`. In this workspace it can discover the existing sibling toolchain without embedding its personal path. Direct equivalent:
+The script also accepts `-Jdk <directory> -Sdk <directory>`. It can discover a JDK 17 and Android SDK in a sibling `.toolchain` directory; otherwise configure the environment or pass these options. Direct equivalent:
 
 ```text
 gradlew.bat :engine:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -62,7 +66,7 @@ gradlew.bat :engine:test :app:testDebugUnitTest :app:lintRelease :app:assembleRe
 
 Gradle deliberately leaves that release APK unsigned. Sign it with your own Android release key using SDK `apksigner`, then verify it. The provided local release APK has a separate local signing identity; its private key is excluded from source/distribution archives. Keep its key backup if you intend to issue compatible updates; never publish it.
 
-In the development checkout, that local key and its password file are stored under `.local/signing/`. They are deliberately absent from the source ZIP.
+Keep release keys and password files outside the repository or under the ignored `.local/signing/` directory. They are deliberately absent from the source ZIP.
 
 With JDK 17 and `ANDROID_HOME` set, the signing helper accepts an existing keystore and password file without putting the password on the command line:
 
@@ -78,9 +82,10 @@ Optional development commands:
 powershell -ExecutionPolicy Bypass -File .\tools\format.ps1 -Check
 .\gradlew.bat :engine:benchmark
 python .\tools\package.py --apk path\to\signed.apk
+python -m unittest discover -s tools -p test_package.py -v
 ```
 
-The formatter is checksum-pinned. Packaging requires Python 3.12+, checks archive contents, excludes build caches/local credentials, and emits SHA-256 checksums. CI is included for a checkout whose root is this directory; that hosted workflow is defined but has not been run here.
+The formatter is checksum-pinned. Packaging is tested with Python 3.12, checks archive contents, rejects unsafe output locations, excludes build caches/local credentials, and emits SHA-256 checksums. [GitHub Actions](https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml) runs the same engine/Android checks plus formatting and packaging tests on pull requests and `main`. CI does not sign or upload a distributable APK.
 
 ## Tests and diagnostics
 

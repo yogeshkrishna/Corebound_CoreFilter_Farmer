@@ -1,7 +1,7 @@
 {
   "date": "2026-10-21",
   "version": "1.0.0-rc1",
-  "scope": "Windows development host, Java tests, Android API 35 Robolectric; no connected target",
+  "scope": "Initial Windows host verification; Java/Android logic unchanged during repository-root migration. Current hosted checks are linked separately.",
   "tests": {
     "engine": {
       "tests": 73,
@@ -60,8 +60,6 @@
   },
   "apk": {
     "file": "CoreFilterPilot-1.0.0-rc1.apk",
-    "bytes": 14041324,
-    "sha256": "98ee3eb3917099b23d195efa43945c0f6e352a2494fb01bedf36614e93f86dde",
     "debuggable": false,
     "signatureSchemeV3Verified": true,
     "zipAlignment16KBVerified": true,
@@ -72,7 +70,8 @@
         16384
       ]
     },
-    "internetPermission": false
+    "internetPermission": false,
+    "distributionManifest": "Use SHA256SUMS.txt and artifacts.json from the published release for current binary hashes and sizes."
   },
   "oldProject": {
     "filesChecked": 161,
@@ -97,10 +96,15 @@
   "remainingGate": "Supervised ARM64 phone trial: capture/OCR/gestures/menu loop, sustained patrol, actual inventory increase and coverage measurements",
   "hostCaveat": "Robolectric uses Windows filesystems; fixture replacement avoids AtomicFile rename-over-existing, while actual Android/Linux replace semantics remain a device test.",
   "distribution": {
-    "sourceEntries": 71,
     "sourceCrcAndByteComparison": "passed",
     "deterministicSourceArchive": "passed",
     "privateFilesExcluded": "passed",
     "artifactChecksums": "passed"
+  },
+  "hostedChecks": "https://github.com/yogeshkrishna/Corebound_CoreFilter_Farmer/actions/workflows/check.yml",
+  "packagingTests": {
+    "tests": 5,
+    "failures": 0,
+    "scope": "Output validation, deterministic archives and private/build-file exclusion"
   }
 }

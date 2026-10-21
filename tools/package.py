@@ -8,7 +8,7 @@ import shutil
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-EXCLUDE = {'.git', '.gradle', '.local', 'build', 'dist', '__pycache__', '.idea'}
+EXCLUDE = {'.git', '.gradle', '.local', '.toolchain', 'build', 'dist', '__pycache__', '.idea'}
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
